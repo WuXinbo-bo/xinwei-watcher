@@ -1,0 +1,21 @@
+{
+  "manifest_version": 3,
+  "name": "Xinwei Course Watcher",
+  "version": "1.0.0",
+  "description": "Injects the Xinwei course watcher helper panel on Beeline AI student course pages.",
+  "content_scripts": [
+    {
+      "matches": [
+        "https://www.beeline-ai.com/student/*",
+        "https://www.beeline-ai.com/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_title": "Xinwei Course Watcher"
+  }
+}
