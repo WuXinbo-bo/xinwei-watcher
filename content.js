@@ -315,23 +315,45 @@
     document.body.appendChild(box);
     state.logBox = box.querySelector('#wb-log');
 
+    function keepBoxInViewport(left, top) {
+      const margin = 8;
+      const maxLeft = Math.max(margin, window.innerWidth - box.offsetWidth - margin);
+      const maxTop = Math.max(margin, window.innerHeight - box.offsetHeight - margin);
+      return {
+        left: Math.min(Math.max(margin, left), maxLeft),
+        top: Math.min(Math.max(margin, top), maxTop)
+      };
+    }
+
+    function repositionBoxInViewport() {
+      const rect = box.getBoundingClientRect();
+      const position = keepBoxInViewport(rect.left, rect.top);
+      box.style.left = `${position.left}px`;
+      box.style.top = `${position.top}px`;
+      box.style.right = 'auto';
+    }
+
     let dragging = false, dx = 0, dy = 0;
     const drag = box.querySelector('#wb-drag');
 
     drag.addEventListener('mousedown', e => {
+      if (e.button !== 0) return;
       dragging = true;
       dx = e.clientX - box.getBoundingClientRect().left;
       dy = e.clientY - box.getBoundingClientRect().top;
+      e.preventDefault();
     });
 
     document.addEventListener('mousemove', e => {
       if (!dragging) return;
-      box.style.left = `${e.clientX - dx}px`;
-      box.style.top = `${e.clientY - dy}px`;
+      const position = keepBoxInViewport(e.clientX - dx, e.clientY - dy);
+      box.style.left = `${position.left}px`;
+      box.style.top = `${position.top}px`;
       box.style.right = 'auto';
     });
 
     document.addEventListener('mouseup', () => dragging = false);
+    window.addEventListener('resize', repositionBoxInViewport);
 
     box.querySelector('#wb-min').addEventListener('click', () => {
       const body = box.querySelector('#wb-body');
