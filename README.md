@@ -104,4 +104,4 @@ node --check .\content.js
 
 ## 许可证
 
-当前仓库没有声明许可证。若要公开发布，请补充明确的许可证文件，并确认代码、平台名称和页面自动化行为符合相关授权与使用条款。
+本项目采用 [Apache License 2.0](https://www.apache.org/licenses/LICENSE-2.0) 授权，详见 [LICENSE](LICENSE)。
