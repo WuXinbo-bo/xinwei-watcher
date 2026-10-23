@@ -119,6 +119,13 @@
   const MAX_PENDING_LOG_ENTRIES = 80;
 
   const JOB_CHANNEL = 'xinwei-job';
+  // The promotion can be removed independently by setting enabled to false.
+  const PROMOTION_CONFIG = {
+    enabled: true,
+    brand: '创世の鑫元',
+    services: ['AI API 中转服务', 'GPT 会员代充值'],
+    url: 'https://88cf.scxai.top/'
+  };
 
   const SELECTORS = {
     menuItems: [
@@ -674,6 +681,8 @@
     if (panel) panel.hidden = routeHidden || !state.panelExpanded;
     const assistantButton = document.getElementById('wb-assistant-button');
     if (assistantButton) assistantButton.hidden = routeHidden || state.panelExpanded;
+    const promotion = document.getElementById('wb-promotion');
+    if (promotion) promotion.hidden = routeHidden || !state.panelExpanded || !PROMOTION_CONFIG.enabled;
     const control = getStartControl();
     const startButton = document.getElementById('wb-start');
     if (startButton) {
@@ -1208,6 +1217,10 @@
     style.textContent = `
       #wb-study-ui{
         position:fixed;right:18px;top:90px;width:340px;z-index:999999;
+        max-width:calc(min(100vw,var(--wb-visible-width,100vw)) - 32px);
+        max-height:calc(var(--wb-visible-height,100vh) - 28px);
+        display:flex;flex-direction:column;
+        isolation:isolate;overflow:visible;
         background:#fff;border:1px solid #e6e6e6;border-radius:12px;
         box-shadow:0 8px 28px rgba(0,0,0,.16);font:13px/1.4 PingFang SC,Arial,sans-serif;color:#222;
         user-select:none;
@@ -1223,12 +1236,70 @@
       #wb-assistant-button img{display:block;width:100%;height:100%;object-fit:cover;pointer-events:none}
       #wb-assistant-button:active{cursor:grabbing}
       #wb-assistant-button:focus-visible{outline:2px solid #005eff;outline-offset:3px}
+      #wb-promotion{
+        position:absolute;inset:-12px;z-index:-1;overflow:visible;
+        color:#40536d;font:10px/1 "PingFang SC",Arial,sans-serif;pointer-events:none;
+      }
+      #wb-promotion[hidden]{display:none!important}
+      #wb-promotion .wb-promo-edge{
+        position:absolute;overflow:hidden;color:#40536d;opacity:.88;
+        font:10px/12px "PingFang SC",Arial,sans-serif;white-space:nowrap;
+        pointer-events:none;
+      }
+      #wb-promotion .wb-promo-top{
+        top:0;left:14px;right:138px;height:12px;
+        border-radius:6px 0 0 0;
+      }
+      #wb-promotion .wb-promo-right{
+        top:14px;right:0;bottom:14px;width:12px;
+      }
+      #wb-promotion .wb-promo-bottom{
+        right:14px;bottom:0;left:14px;height:12px;
+        border-radius:0 0 6px 6px;
+      }
+      #wb-promotion .wb-promo-left{
+        top:14px;bottom:14px;left:0;width:12px;
+      }
+      #wb-promotion .wb-promo-run{
+        display:flex;width:max-content;height:100%;will-change:transform;
+      }
+      #wb-promotion .wb-promo-copy{
+        display:block;flex:none;padding-right:24px;white-space:nowrap;
+      }
+      #wb-promotion .wb-promo-top .wb-promo-run{animation:wb-promo-left 52s linear infinite}
+      #wb-promotion .wb-promo-bottom .wb-promo-run{animation:wb-promo-right 52s linear infinite}
+      #wb-promotion .wb-promo-right .wb-promo-run,
+      #wb-promotion .wb-promo-left .wb-promo-run{
+        display:flex;flex-direction:column;width:12px;height:max-content;
+      }
+      #wb-promotion .wb-promo-right .wb-promo-run{animation:wb-promo-down 58s linear infinite}
+      #wb-promotion .wb-promo-left .wb-promo-run{animation:wb-promo-up 58s linear infinite}
+      #wb-promotion .wb-promo-right .wb-promo-copy,
+      #wb-promotion .wb-promo-left .wb-promo-copy{
+        writing-mode:vertical-rl;text-orientation:mixed;padding:0 0 24px;
+      }
+      #wb-promotion .wb-promo-link{
+        position:absolute;top:0;right:0;box-sizing:border-box;width:130px;height:12px;
+        display:flex;align-items:center;justify-content:center;overflow:hidden;
+        background:rgba(255,255,255,.96);color:#1557b0;font:700 10px/12px "PingFang SC",Arial,sans-serif;
+        text-decoration:underline;text-underline-offset:2px;white-space:nowrap;
+        pointer-events:auto;
+      }
+      #wb-promotion .wb-promo-link:focus-visible{outline:2px solid #005eff;outline-offset:1px}
+      @keyframes wb-promo-left{to{transform:translateX(-50%)}}
+      @keyframes wb-promo-right{from{transform:translateX(-50%)}to{transform:translateX(0)}}
+      @keyframes wb-promo-down{from{transform:translateY(-50%)}to{transform:translateY(0)}}
+      @keyframes wb-promo-up{to{transform:translateY(-50%)}}
+      @media(prefers-reduced-motion:reduce){
+        #wb-promotion .wb-promo-run{animation:none!important;will-change:auto}
+      }
       #wb-study-ui .hd{
+        flex:0 0 auto;
         padding:10px 12px;background:#005eff;color:#fff;border-radius:12px 12px 0 0;
         display:flex;justify-content:space-between;align-items:center;font-weight:700;cursor:grab;touch-action:none;
       }
       #wb-study-ui .hd:active{cursor:grabbing}
-      #wb-study-ui .bd{padding:12px}
+      #wb-study-ui .bd{min-height:0;overflow-y:auto;overscroll-behavior:contain;padding:12px}
       #wb-study-ui .btn{
         width:100%;border:none;border-radius:10px;padding:9px 10px;margin-top:8px;cursor:pointer;font-weight:700;
       }
@@ -1390,6 +1461,46 @@
       </div>
     `;
     document.body.appendChild(box);
+    if (PROMOTION_CONFIG.enabled) {
+      const promo = document.createElement('div');
+      promo.id = 'wb-promotion';
+      promo.hidden = getRoute() === 'other' || !state.panelExpanded;
+
+      const promoCopy = [
+        `推广 · ${PROMOTION_CONFIG.brand}`,
+        ...PROMOTION_CONFIG.services,
+        'GPT / Claude / API 服务',
+        `了解更多 · ${new URL(PROMOTION_CONFIG.url).host}`
+      ].join('　·　');
+      for (const side of ['top', 'right', 'bottom', 'left']) {
+        const edge = document.createElement('div');
+        edge.className = `wb-promo-edge wb-promo-${side}`;
+        edge.setAttribute('aria-hidden', 'true');
+        const run = document.createElement('div');
+        run.className = 'wb-promo-run';
+        for (let copyIndex = 0; copyIndex < 2; copyIndex += 1) {
+          const copy = document.createElement('span');
+          copy.className = 'wb-promo-copy';
+          copy.textContent = promoCopy;
+          run.appendChild(copy);
+        }
+        edge.appendChild(run);
+        promo.appendChild(edge);
+      }
+
+      const promoLink = document.createElement('a');
+      promoLink.className = 'wb-promo-link';
+      promoLink.href = PROMOTION_CONFIG.url;
+      promoLink.target = '_blank';
+      promoLink.rel = 'noopener noreferrer';
+      promoLink.textContent = '推广 · 了解更多 ↗';
+      promoLink.setAttribute(
+        'aria-label',
+        `推广：${PROMOTION_CONFIG.brand}，${PROMOTION_CONFIG.services.join('、')}，了解更多`
+      );
+      promo.appendChild(promoLink);
+      box.appendChild(promo);
+    }
     const assistantButton = document.createElement('button');
     assistantButton.id = 'wb-assistant-button';
     assistantButton.type = 'button';
@@ -1442,12 +1553,33 @@
       return { width: width || fallback.width, height: height || fallback.height };
     }
 
+    function getVisibleViewport() {
+      const visual = window.visualViewport;
+      const left = Number.isFinite(visual?.offsetLeft) ? visual.offsetLeft : 0;
+      const top = Number.isFinite(visual?.offsetTop) ? visual.offsetTop : 0;
+      const width = Number.isFinite(visual?.width) && visual.width > 0
+        ? visual.width : window.innerWidth;
+      const height = Number.isFinite(visual?.height) && visual.height > 0
+        ? visual.height : window.innerHeight;
+      return { left, top, width, height };
+    }
+
+    function syncViewportConstraints() {
+      const viewport = getVisibleViewport();
+      box.style.setProperty('--wb-visible-width', `${viewport.width}px`);
+      box.style.setProperty('--wb-visible-height', `${viewport.height}px`);
+      return viewport;
+    }
+
     function keepBoxInViewport(left, top, width, height, margin = 8) {
-      const maxLeft = Math.max(margin, window.innerWidth - width - margin);
-      const maxTop = Math.max(margin, window.innerHeight - height - margin);
+      const viewport = getVisibleViewport();
+      const minLeft = viewport.left + margin;
+      const minTop = viewport.top + margin;
+      const maxLeft = Math.max(minLeft, viewport.left + viewport.width - width - margin);
+      const maxTop = Math.max(minTop, viewport.top + viewport.height - height - margin);
       return {
-        left: Math.min(Math.max(margin, left), maxLeft),
-        top: Math.min(Math.max(margin, top), maxTop)
+        left: Math.min(Math.max(minLeft, left), maxLeft),
+        top: Math.min(Math.max(minTop, top), maxTop)
       };
     }
 
@@ -1461,8 +1593,10 @@
     }
 
     function applyPanelPosition(left, top) {
-      const size = getElementSize(box, { width: 342, height: Math.max(0, window.innerHeight - 16) });
-      const position = keepBoxInViewport(left, top, size.width, size.height);
+      const viewport = getVisibleViewport();
+      const size = getElementSize(box, { width: 342, height: Math.max(0, viewport.height - 26) });
+      const position = keepBoxInViewport(left, top, size.width, size.height,
+        PROMOTION_CONFIG.enabled ? 13 : 8);
       box.style.left = `${position.left}px`;
       box.style.top = `${position.top}px`;
       box.style.right = 'auto';
@@ -1486,13 +1620,15 @@
       assistantButton.style.left = `${position.left}px`;
       assistantButton.style.top = `${position.top}px`;
       assistantButton.style.right = 'auto';
-      const panelSize = getElementSize(box, { width: 342, height: Math.max(0, window.innerHeight - 16) });
-      state.uiPosition = keepBoxInViewport(
-        position.left + buttonSize.width - panelSize.width,
-        position.top,
-        panelSize.width,
-        panelSize.height
-      );
+      const panelSize = getElementSize(box, { width: 342, height: 0 });
+      const margin = PROMOTION_CONFIG.enabled ? 13 : 8;
+      const viewport = getVisibleViewport();
+      const panelLeft = position.left + buttonSize.width - panelSize.width;
+      state.uiPosition = {
+        left: Math.min(Math.max(viewport.left + margin, panelLeft),
+          Math.max(viewport.left + margin, viewport.left + viewport.width - panelSize.width - margin)),
+        top: position.top
+      };
     }
 
     function setPanelExpanded(expanded) {
@@ -1557,7 +1693,8 @@
     assistantButton.addEventListener('click', event => {
       if (event.detail === 0) setPanelExpanded(true);
     });
-    window.addEventListener('resize', () => {
+    function repositionWithinVisibleViewport() {
+      syncViewportConstraints();
       if (state.panelExpanded) {
         const position = readPanelPosition();
         applyPanelPosition(position.left, position.top);
@@ -1568,19 +1705,27 @@
         const top = assistantButton.style.top ? parseFloat(assistantButton.style.top) : 90;
         applyAssistantPosition(left, top);
       }
-    });
-    window.visualViewport?.addEventListener('resize', () => {
-      if (state.panelExpanded) {
-        const position = readPanelPosition();
-        applyPanelPosition(position.left, position.top);
+    }
+
+    let viewportRepositionScheduled = false;
+    function scheduleViewportReposition() {
+      if (viewportRepositionScheduled) return;
+      viewportRepositionScheduled = true;
+      const reposition = () => {
+        viewportRepositionScheduled = false;
+        repositionWithinVisibleViewport();
+      };
+      if (typeof window.requestAnimationFrame === 'function') {
+        window.requestAnimationFrame(reposition);
       } else {
-        const buttonSize = getElementSize(assistantButton, { width: 56, height: 56 });
-        const left = assistantButton.style.left ? parseFloat(assistantButton.style.left) :
-          window.innerWidth - buttonSize.width - 18;
-        const top = assistantButton.style.top ? parseFloat(assistantButton.style.top) : 90;
-        applyAssistantPosition(left, top);
+        window.setTimeout(reposition, 0);
       }
-    });
+    }
+
+    repositionWithinVisibleViewport();
+    window.addEventListener('resize', repositionWithinVisibleViewport);
+    window.visualViewport?.addEventListener('resize', scheduleViewportReposition);
+    window.visualViewport?.addEventListener('scroll', scheduleViewportReposition);
 
     box.querySelector('#wb-min').addEventListener('click', () => setPanelExpanded(false));
 
@@ -4291,7 +4436,8 @@
   setTimeout(syncSharedJob, 0);
 
   window.__wbStudyTest = {
-    start, stop, resetPlugin, scanDirectory, refreshDirectories, state, CFG,
+    start, stop, resetPlugin, scanDirectory, refreshDirectories, updateTaskControls,
+    state, CFG, PROMOTION_CONFIG,
     normalizePlaybackTarget, getPlaybackTarget, savePlaybackTarget,
     parseProgressText, getResourceCompletion,
     getMenuItems, getItemKey, isVideoItem, isPageCompletedItem, currentCourseKey,

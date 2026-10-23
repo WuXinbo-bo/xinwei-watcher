@@ -37,18 +37,22 @@ function agentFixture(c, id, options = {}) {
   return f;
 }
 
-test('实际首页及其他站内页面显示可用开始和重置', () => {
+test('首页及其他站内页面默认显示悬浮球，展开后开始和重置可用', () => {
   const c = coordinator();
   const id = c.addTab(AGENT);
   const f = agentFixture(c, id);
   const unsupported = homeFixture([], { url: `${AGENT}-unknown` });
   try {
-    assert.equal(f.window.document.getElementById('wb-study-ui').hidden, false);
-    assert.equal(f.window.document.getElementById('wb-start').disabled, false);
-    assert.equal(f.window.document.getElementById('wb-reset').disabled, false);
-    assert.equal(unsupported.window.document.getElementById('wb-study-ui').hidden, false);
-    assert.equal(unsupported.window.document.getElementById('wb-start').disabled, false);
-    assert.equal(unsupported.window.document.getElementById('wb-reset').disabled, false);
+    for (const page of [f, unsupported]) {
+      const panel = page.window.document.getElementById('wb-study-ui');
+      const assistant = page.window.document.getElementById('wb-assistant-button');
+      assert.equal(panel.hidden, true);
+      assert.equal(assistant.hidden, false);
+      assistant.click();
+      assert.equal(panel.hidden, false);
+      assert.equal(page.window.document.getElementById('wb-start').disabled, false);
+      assert.equal(page.window.document.getElementById('wb-reset').disabled, false);
+    }
   } finally { f.dom.window.close(); unsupported.dom.window.close(); }
 });
 

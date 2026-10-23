@@ -18,7 +18,12 @@ test('站内普通页面显示开始，点击后仅转已确认首页，不直�
   try {
     f.window.document.querySelector('.item-bg-text p.sle').addEventListener('click', () => cardClicks++);
     const start = f.window.document.getElementById('wb-start');
-    assert.equal(f.window.document.getElementById('wb-study-ui').hidden, false);
+    const panel = f.window.document.getElementById('wb-study-ui');
+    const assistant = f.window.document.getElementById('wb-assistant-button');
+    assert.equal(panel.hidden, true);
+    assert.equal(assistant.hidden, false);
+    assistant.click();
+    assert.equal(panel.hidden, false);
     assert.equal(start.disabled, false);
     start.click();
     await waitFor(() => c.navigation.some(n => n.id === id && n.url === AGENT));

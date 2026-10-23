@@ -7,7 +7,10 @@ function setLayout(f) {
   const panel = window.document.getElementById('wb-study-ui');
   const button = window.document.getElementById('wb-assistant-button');
   panel.getBoundingClientRect = () => {
-    const width = 342, height = 480;
+    const viewportWidth = window.visualViewport?.width ?? window.innerWidth;
+    const viewportHeight = window.visualViewport?.height ?? window.innerHeight;
+    const width = Math.min(342, Math.max(0, viewportWidth - 30));
+    const height = Math.min(480, Math.max(0, viewportHeight - 26));
     const left = panel.style.left ? parseFloat(panel.style.left) : window.innerWidth - width - 18;
     const top = panel.style.top ? parseFloat(panel.style.top) : 90;
     return { left, top, right: left + width, bottom: top + height, width, height, x: left, y: top, toJSON() {} };
@@ -20,10 +23,17 @@ function setLayout(f) {
   };
 }
 
-function pointer(window, target, type, x, y) {
-  target.dispatchEvent(new window.MouseEvent(type, {
-    bubbles: true, cancelable: true, button: 0, clientX: x, clientY: y
-  }));
+function pointer(window, target, type, x, y, { pointerId = 1, isPrimary = true } = {}) {
+  // jsdom has no PointerEvent, so expose the pointer fields used by the drag logic.
+  const event = new window.Event(type, { bubbles: true, cancelable: true });
+  Object.defineProperties(event, {
+    button: { value: 0 },
+    clientX: { value: x },
+    clientY: { value: y },
+    isPrimary: { value: isPrimary },
+    pointerId: { value: pointerId }
+  });
+  target.dispatchEvent(event);
 }
 
 function close(f) {
@@ -153,4 +163,245 @@ test('resizing the viewport keeps the collapsed button visible', () => {
     assert.ok(parseFloat(button.style.left) + 56 <= f.window.innerWidth - 8);
     assert.ok(parseFloat(button.style.top) + 56 <= f.window.innerHeight - 8);
   } finally { close(f); }
+});
+
+test('the six-pixel drag threshold separates taps from intentional movement', () => {
+  const f = fixture([]);
+  try {
+    setLayout(f);
+    const button = f.window.document.getElementById('wb-assistant-button');
+    const panel = f.window.document.getElementById('wb-study-ui');
+
+    pointer(f.window, button, 'pointerdown', 980, 110);
+    pointer(f.window, f.window.document, 'pointermove', 985, 110);
+    pointer(f.window, f.window.document, 'pointerup', 985, 110);
+    assert.equal(panel.hidden, false);
+
+    f.window.document.getElementById('wb-min').click();
+    pointer(f.window, button, 'pointerdown', 980, 110);
+    pointer(f.window, f.window.document, 'pointermove', 986, 110);
+    pointer(f.window, f.window.document, 'pointerup', 986, 110);
+    button.dispatchEvent(new f.window.MouseEvent('click', { bubbles: true, detail: 1 }));
+
+    assert.equal(panel.hidden, true);
+    assert.equal(button.hidden, false);
+    assert.equal(button.style.left, '956px');
+  } finally { close(f); }
+});
+
+test('pointer identity is honored and pointer cancellation clears the active drag', () => {
+  const f = fixture([]);
+  try {
+    setLayout(f);
+    const button = f.window.document.getElementById('wb-assistant-button');
+    const panel = f.window.document.getElementById('wb-study-ui');
+
+    pointer(f.window, button, 'pointerdown', 980, 110, { pointerId: 7 });
+    pointer(f.window, f.window.document, 'pointermove', 900, 110, { pointerId: 8 });
+    pointer(f.window, f.window.document, 'pointerup', 900, 110, { pointerId: 8 });
+    assert.equal(button.style.left, '950px');
+    assert.equal(panel.hidden, true);
+
+    pointer(f.window, f.window.document, 'pointermove', 990, 110, { pointerId: 7 });
+    pointer(f.window, f.window.document, 'pointercancel', 990, 110, { pointerId: 7 });
+    pointer(f.window, f.window.document, 'pointerup', 900, 110, { pointerId: 7 });
+    assert.equal(panel.hidden, true);
+    assert.equal(button.hidden, false);
+    assert.equal(button.style.left, '960px');
+  } finally { close(f); }
+});
+
+test('dragging the collapsed button preserves its vertical position when expanded', () => {
+  const f = fixture([]);
+  try {
+    setLayout(f);
+    const button = f.window.document.getElementById('wb-assistant-button');
+    const panel = f.window.document.getElementById('wb-study-ui');
+
+    pointer(f.window, button, 'pointerdown', 980, 110);
+    pointer(f.window, f.window.document, 'pointermove', 700, 160);
+    pointer(f.window, f.window.document, 'pointerup', 700, 160);
+    assert.equal(button.style.top, '140px');
+
+    Object.defineProperty(f.window, 'innerWidth', { configurable: true, value: 800 });
+    Object.defineProperty(f.window, 'innerHeight', { configurable: true, value: 700 });
+    f.window.dispatchEvent(new f.window.Event('resize'));
+    pointer(f.window, button, 'pointerdown', 700, 160);
+    pointer(f.window, f.window.document, 'pointerup', 700, 160);
+
+    assert.equal(panel.hidden, false);
+    assert.equal(panel.style.top, '140px');
+  } finally { close(f); }
+});
+
+test('short viewports constrain the panel and keep its external promotion rail in view', () => {
+  const f = fixture([]);
+  try {
+    setLayout(f);
+    Object.defineProperty(f.window, 'innerWidth', { configurable: true, value: 420 });
+    Object.defineProperty(f.window, 'innerHeight', { configurable: true, value: 240 });
+    f.window.dispatchEvent(new f.window.Event('resize'));
+
+    const button = f.window.document.getElementById('wb-assistant-button');
+    const panel = f.window.document.getElementById('wb-study-ui');
+    pointer(f.window, button, 'pointerdown', 390, 110);
+    pointer(f.window, f.window.document, 'pointerup', 390, 110);
+
+    const panelRect = panel.getBoundingClientRect();
+    assert.equal(panel.hidden, false);
+    assert.equal(panel.style.top, '13px');
+    assert.ok(panelRect.top >= 13);
+    assert.ok(panelRect.bottom + 12 <= f.window.innerHeight);
+    assert.equal(f.window.document.getElementById('wb-body').style.overflowY, '');
+
+    const injectedStyle = [...f.window.document.querySelectorAll('style')]
+      .map(style => style.textContent).join('\n');
+    assert.match(injectedStyle, /max-height:\s*calc\(var\(--wb-visible-height,100vh\) - 28px\)/);
+    assert.match(injectedStyle, /#wb-study-ui \.bd\{[^}]*overflow-y:auto/s);
+  } finally { close(f); }
+});
+
+test('visual viewport resize and pan keep the floating assistant inside its visible bounds', async () => {
+  let viewport;
+  const f = fixture([], {
+    beforeContent({ window }) {
+      viewport = new window.EventTarget();
+      Object.defineProperties(viewport, {
+        width: { configurable: true, writable: true, value: 300 },
+        height: { configurable: true, writable: true, value: 220 },
+        offsetLeft: { configurable: true, writable: true, value: 100 },
+        offsetTop: { configurable: true, writable: true, value: 80 }
+      });
+      Object.defineProperty(window, 'visualViewport', { configurable: true, value: viewport });
+    }
+  });
+  try {
+    setLayout(f);
+    const button = f.window.document.getElementById('wb-assistant-button');
+    const panel = f.window.document.getElementById('wb-study-ui');
+    assert.equal(button.style.left, '336px');
+
+    viewport.width = 280;
+    viewport.height = 200;
+    viewport.dispatchEvent(new f.window.Event('resize'));
+    await new Promise(resolve => f.window.requestAnimationFrame(resolve));
+    assert.equal(button.style.left, '316px');
+    assert.equal(panel.style.getPropertyValue('--wb-visible-width'), '280px');
+    assert.equal(panel.style.getPropertyValue('--wb-visible-height'), '200px');
+
+    viewport.offsetLeft = 500;
+    viewport.offsetTop = 200;
+    viewport.dispatchEvent(new f.window.Event('scroll'));
+    await new Promise(resolve => f.window.requestAnimationFrame(resolve));
+
+    assert.equal(button.style.left, '508px');
+    assert.equal(button.style.top, '208px');
+    assert.equal(panel.style.getPropertyValue('--wb-visible-width'), '280px');
+    assert.equal(panel.style.getPropertyValue('--wb-visible-height'), '200px');
+
+    pointer(f.window, button, 'pointerdown', 520, 220);
+    pointer(f.window, f.window.document, 'pointerup', 520, 220);
+    const panelRect = panel.getBoundingClientRect();
+    assert.equal(panel.hidden, false);
+    assert.ok(panelRect.left >= viewport.offsetLeft + 13);
+    assert.ok(panelRect.top >= viewport.offsetTop + 13);
+    assert.ok(panelRect.right + 12 <= viewport.offsetLeft + viewport.width);
+    assert.ok(panelRect.bottom + 12 <= viewport.offsetTop + viewport.height);
+  } finally { close(f); }
+});
+
+test('the floating button remains clamped at the smallest fitting viewport and recovers after resize', () => {
+  const f = fixture([]);
+  try {
+    setLayout(f);
+    const button = f.window.document.getElementById('wb-assistant-button');
+
+    Object.defineProperty(f.window, 'innerWidth', { configurable: true, value: 64 });
+    Object.defineProperty(f.window, 'innerHeight', { configurable: true, value: 64 });
+    f.window.dispatchEvent(new f.window.Event('resize'));
+    assert.equal(button.style.left, '8px');
+    assert.equal(button.style.top, '8px');
+
+    Object.defineProperty(f.window, 'innerWidth', { configurable: true, value: 1024 });
+    Object.defineProperty(f.window, 'innerHeight', { configurable: true, value: 768 });
+    f.window.dispatchEvent(new f.window.Event('resize'));
+    assert.ok(parseFloat(button.style.left) + 56 <= f.window.innerWidth - 8);
+    assert.ok(parseFloat(button.style.top) + 56 <= f.window.innerHeight - 8);
+  } finally { close(f); }
+});
+
+test('non-primary and canceled pointers do not activate the floating assistant', () => {
+  const f = fixture([]);
+  try {
+    setLayout(f);
+    const button = f.window.document.getElementById('wb-assistant-button');
+
+    pointer(f.window, button, 'pointerdown', 980, 110, { isPrimary: false });
+    pointer(f.window, f.window.document, 'pointerup', 980, 110);
+    assert.equal(button.hidden, false);
+
+    pointer(f.window, button, 'pointerdown', 980, 110, { pointerId: 2 });
+    pointer(f.window, f.window.document, 'pointercancel', 980, 110, { pointerId: 2 });
+    assert.equal(button.hidden, false);
+  } finally { close(f); }
+});
+
+test('promotion is a separate four-edge rail with an explicit user-click link', () => {
+  const f = fixture([]);
+  try {
+    setLayout(f);
+    const promo = f.window.document.getElementById('wb-promotion');
+    const button = f.window.document.getElementById('wb-assistant-button');
+    assert.ok(promo);
+    assert.equal(promo.hidden, true);
+    assert.equal(promo.querySelectorAll('.wb-promo-edge').length, 4);
+    assert.equal(promo.querySelectorAll('.wb-promo-copy').length, 8);
+
+    pointer(f.window, button, 'pointerdown', 980, 110);
+    pointer(f.window, f.window.document, 'pointerup', 980, 110);
+
+    assert.equal(promo.hidden, false);
+    assert.match(promo.textContent, /推广 · 创世の鑫元/);
+    assert.match(promo.textContent, /AI API 中转服务/);
+    assert.match(promo.textContent, /GPT 会员代充值/);
+    const link = promo.querySelector('a');
+    assert.equal(link.href, 'https://88cf.scxai.top/');
+    assert.equal(link.target, '_blank');
+    assert.match(link.rel, /noopener/);
+    assert.match(link.getAttribute('aria-label'), /推广/);
+
+    const injectedStyle = [...f.window.document.querySelectorAll('style')]
+      .map(style => style.textContent).join('\n');
+    assert.match(injectedStyle, /prefers-reduced-motion:\s*reduce/);
+    assert.match(injectedStyle, /#wb-promotion\s*\{[^}]*pointer-events:none/s);
+    assert.match(injectedStyle, /wb-promo-left/);
+  } finally { close(f); }
+});
+
+test('disabling the promotion hides only its layer and leaves the panel usable', () => {
+  const f = fixture([]);
+  try {
+    setLayout(f);
+    const button = f.window.document.getElementById('wb-assistant-button');
+    pointer(f.window, button, 'pointerdown', 980, 110);
+    pointer(f.window, f.window.document, 'pointerup', 980, 110);
+    f.api.state.running = true;
+    f.api.PROMOTION_CONFIG.enabled = false;
+    f.api.updateTaskControls();
+
+    assert.equal(f.window.document.getElementById('wb-promotion').hidden, true);
+    assert.equal(f.window.document.getElementById('wb-study-ui').hidden, false);
+    assert.equal(f.window.document.getElementById('wb-assistant-button').hidden, true);
+    assert.ok(f.window.document.getElementById('wb-start'));
+    assert.equal(f.api.state.running, true);
+  } finally { close(f); }
+});
+
+test('manifest exposes only the local avatar to the existing course-site origin', () => {
+  const manifest = JSON.parse(require('node:fs').readFileSync('manifest.json', 'utf8'));
+  assert.deepEqual(manifest.permissions, ['storage']);
+  assert.deepEqual(manifest.web_accessible_resources, [{
+    resources: ['assets/floating-assistant.png'],
+    matches: ['https://www.beeline-ai.com/*']
+  }]);
 });
