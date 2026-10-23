@@ -100,6 +100,8 @@
     playbackTargetPendingWrites: 0,
     playbackTargetPendingChange: null,
     playbackTargetSync: null,
+    panelExpanded: false,
+    uiPosition: null,
     stopSequence: 0,
     resetEpoch: 0,
     resetSequence: 0,
@@ -668,7 +670,10 @@
 
   function updateTaskControls() {
     const panel = document.getElementById('wb-study-ui');
-    if (panel) panel.hidden = getRoute() === 'other';
+    const routeHidden = getRoute() === 'other';
+    if (panel) panel.hidden = routeHidden || !state.panelExpanded;
+    const assistantButton = document.getElementById('wb-assistant-button');
+    if (assistantButton) assistantButton.hidden = routeHidden || state.panelExpanded;
     const control = getStartControl();
     const startButton = document.getElementById('wb-start');
     if (startButton) {
@@ -1208,10 +1213,21 @@
         user-select:none;
       }
       #wb-study-ui[hidden]{display:none!important}
+      #wb-assistant-button{
+        position:fixed;right:18px;top:90px;z-index:1000000;
+        box-sizing:border-box;width:56px;height:56px;padding:0;overflow:hidden;
+        border:1px solid rgba(255,255,255,.9);border-radius:50%;background:#fff;
+        box-shadow:0 4px 16px rgba(0,0,0,.2);cursor:grab;touch-action:none;
+      }
+      #wb-assistant-button[hidden]{display:none!important}
+      #wb-assistant-button img{display:block;width:100%;height:100%;object-fit:cover;pointer-events:none}
+      #wb-assistant-button:active{cursor:grabbing}
+      #wb-assistant-button:focus-visible{outline:2px solid #005eff;outline-offset:3px}
       #wb-study-ui .hd{
         padding:10px 12px;background:#005eff;color:#fff;border-radius:12px 12px 0 0;
-        display:flex;justify-content:space-between;align-items:center;font-weight:700;cursor:move;
+        display:flex;justify-content:space-between;align-items:center;font-weight:700;cursor:grab;touch-action:none;
       }
+      #wb-study-ui .hd:active{cursor:grabbing}
       #wb-study-ui .bd{padding:12px}
       #wb-study-ui .btn{
         width:100%;border:none;border-radius:10px;padding:9px 10px;margin-top:8px;cursor:pointer;font-weight:700;
@@ -1304,17 +1320,23 @@
       #wb-study-ui .dir-empty{
         font-size:12px;color:#888;padding:6px 4px;
       }
-      #wb-study-ui .mini{cursor:pointer;font-size:18px}
+      #wb-study-ui .mini{
+        display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;
+        padding:0;border:0;border-radius:4px;background:transparent;color:inherit;
+        font:inherit;font-size:20px;line-height:1;cursor:pointer;
+      }
+      #wb-study-ui .mini:hover{background:rgba(255,255,255,.16)}
+      #wb-study-ui .mini:focus-visible{outline:2px solid #fff;outline-offset:1px}
     `;
     document.head.appendChild(style);
 
     const box = document.createElement('div');
     box.id = 'wb-study-ui';
-    box.hidden = getRoute() === 'other';
+    box.hidden = getRoute() === 'other' || !state.panelExpanded;
     box.innerHTML = `
       <div class="hd" id="wb-drag">
         <span>课程学习助手</span>
-        <span class="mini" id="wb-min">−</span>
+        <button class="mini" id="wb-min" type="button" title="收起" aria-label="收起课程学习助手">−</button>
       </div>
       <div class="bd" id="wb-body">
         <div class="kv"><span>状态</span><span id="wb-status">未开始</span></div>
@@ -1368,6 +1390,22 @@
       </div>
     `;
     document.body.appendChild(box);
+    const assistantButton = document.createElement('button');
+    assistantButton.id = 'wb-assistant-button';
+    assistantButton.type = 'button';
+    assistantButton.setAttribute('aria-label', '展开课程学习助手');
+    assistantButton.setAttribute('aria-expanded', 'false');
+    assistantButton.title = '展开课程学习助手';
+    assistantButton.hidden = getRoute() === 'other' || state.panelExpanded;
+    const assistantImage = document.createElement('img');
+    assistantImage.alt = '';
+    assistantImage.draggable = false;
+    const getExtensionUrl = globalThis.chrome?.runtime?.getURL;
+    if (typeof getExtensionUrl === 'function') {
+      assistantImage.src = getExtensionUrl.call(globalThis.chrome.runtime, 'assets/floating-assistant.png');
+    }
+    assistantButton.appendChild(assistantImage);
+    document.body.appendChild(assistantButton);
     const targetInput = box.querySelector('#wb-playback-target');
     targetInput.addEventListener('change', () => {
       savePlaybackTarget(targetInput.value).catch(() => {
@@ -1393,50 +1431,158 @@
       updateLogNewButton();
     });
 
-    function keepBoxInViewport(left, top) {
-      const margin = 8;
-      const maxLeft = Math.max(margin, window.innerWidth - box.offsetWidth - margin);
-      const maxTop = Math.max(margin, window.innerHeight - box.offsetHeight - margin);
+    function getElementSize(element, fallback) {
+      const rect = element.getBoundingClientRect();
+      const computed = window.getComputedStyle(element);
+      const borderWidth = (parseFloat(computed.borderLeftWidth) || 0) +
+        (parseFloat(computed.borderRightWidth) || 0);
+      const width = rect.width || element.offsetWidth ||
+        ((parseFloat(computed.width) || 0) + (computed.boxSizing === 'border-box' ? 0 : borderWidth));
+      const height = rect.height || element.offsetHeight || element.scrollHeight || fallback.height;
+      return { width: width || fallback.width, height: height || fallback.height };
+    }
+
+    function keepBoxInViewport(left, top, width, height, margin = 8) {
+      const maxLeft = Math.max(margin, window.innerWidth - width - margin);
+      const maxTop = Math.max(margin, window.innerHeight - height - margin);
       return {
         left: Math.min(Math.max(margin, left), maxLeft),
         top: Math.min(Math.max(margin, top), maxTop)
       };
     }
 
-    function repositionBoxInViewport() {
-      const rect = box.getBoundingClientRect();
-      const position = keepBoxInViewport(rect.left, rect.top);
-      box.style.left = `${position.left}px`;
-      box.style.top = `${position.top}px`;
-      box.style.right = 'auto';
+    function readPanelPosition() {
+      if (state.uiPosition) return { ...state.uiPosition };
+      const size = getElementSize(box, { width: 342, height: 0 });
+      const left = box.style.left ? parseFloat(box.style.left) :
+        window.innerWidth - size.width - 18;
+      const top = box.style.top ? parseFloat(box.style.top) : 90;
+      return { left, top };
     }
 
-    let dragging = false, dx = 0, dy = 0;
-    const drag = box.querySelector('#wb-drag');
-
-    drag.addEventListener('mousedown', e => {
-      if (e.button !== 0) return;
-      dragging = true;
-      dx = e.clientX - box.getBoundingClientRect().left;
-      dy = e.clientY - box.getBoundingClientRect().top;
-      e.preventDefault();
-    });
-
-    document.addEventListener('mousemove', e => {
-      if (!dragging) return;
-      const position = keepBoxInViewport(e.clientX - dx, e.clientY - dy);
+    function applyPanelPosition(left, top) {
+      const size = getElementSize(box, { width: 342, height: Math.max(0, window.innerHeight - 16) });
+      const position = keepBoxInViewport(left, top, size.width, size.height);
       box.style.left = `${position.left}px`;
       box.style.top = `${position.top}px`;
       box.style.right = 'auto';
+      state.uiPosition = position;
+
+      const buttonSize = getElementSize(assistantButton, { width: 56, height: 56 });
+      const buttonPosition = keepBoxInViewport(
+        position.left + size.width - buttonSize.width,
+        position.top,
+        buttonSize.width,
+        buttonSize.height
+      );
+      assistantButton.style.left = `${buttonPosition.left}px`;
+      assistantButton.style.top = `${buttonPosition.top}px`;
+      assistantButton.style.right = 'auto';
+    }
+
+    function applyAssistantPosition(left, top) {
+      const buttonSize = getElementSize(assistantButton, { width: 56, height: 56 });
+      const position = keepBoxInViewport(left, top, buttonSize.width, buttonSize.height);
+      assistantButton.style.left = `${position.left}px`;
+      assistantButton.style.top = `${position.top}px`;
+      assistantButton.style.right = 'auto';
+      const panelSize = getElementSize(box, { width: 342, height: Math.max(0, window.innerHeight - 16) });
+      state.uiPosition = keepBoxInViewport(
+        position.left + buttonSize.width - panelSize.width,
+        position.top,
+        panelSize.width,
+        panelSize.height
+      );
+    }
+
+    function setPanelExpanded(expanded) {
+      if (state.panelExpanded === expanded) return;
+      const position = readPanelPosition();
+      state.panelExpanded = expanded;
+      assistantButton.setAttribute('aria-expanded', String(expanded));
+      assistantButton.setAttribute('aria-label', expanded ? '课程学习助手已展开' : '展开课程学习助手');
+      assistantButton.title = expanded ? '课程学习助手已展开' : '展开课程学习助手';
+      updateTaskControls();
+      if (expanded) applyPanelPosition(position.left, position.top);
+    }
+
+    let activeDrag = null;
+    const drag = box.querySelector('#wb-drag');
+
+    function beginDrag(event, element, kind) {
+      if ((event.button != null && event.button !== 0) || event.isPrimary === false) return;
+      if (kind === 'panel' && event.target.closest('button, a, input, select, textarea, summary')) return;
+      const rect = element.getBoundingClientRect();
+      const initial = kind === 'panel' ? readPanelPosition() : { left: rect.left, top: rect.top };
+      activeDrag = {
+        element,
+        kind,
+        pointerId: event.pointerId,
+        startX: event.clientX,
+        startY: event.clientY,
+        left: initial.left,
+        top: initial.top,
+        moved: false
+      };
+      event.preventDefault();
+    }
+
+    assistantButton.addEventListener('pointerdown', event => beginDrag(event, assistantButton, 'assistant'));
+    drag.addEventListener('pointerdown', event => beginDrag(event, box, 'panel'));
+    document.addEventListener('pointermove', event => {
+      if (!activeDrag || (activeDrag.pointerId != null && event.pointerId != null &&
+        event.pointerId !== activeDrag.pointerId)) return;
+      const dx = event.clientX - activeDrag.startX;
+      const dy = event.clientY - activeDrag.startY;
+      if (!activeDrag.moved && Math.hypot(dx, dy) < 6) return;
+      activeDrag.moved = true;
+      event.preventDefault();
+      if (activeDrag.kind === 'panel') {
+        applyPanelPosition(activeDrag.left + dx, activeDrag.top + dy);
+      } else {
+        applyAssistantPosition(activeDrag.left + dx, activeDrag.top + dy);
+      }
     });
 
-    document.addEventListener('mouseup', () => dragging = false);
-    window.addEventListener('resize', repositionBoxInViewport);
+    function endDrag(event, canceled = false) {
+      if (!activeDrag || (activeDrag.pointerId != null && event.pointerId != null &&
+        event.pointerId !== activeDrag.pointerId)) return;
+      const finished = activeDrag;
+      activeDrag = null;
+      if (!canceled && finished.kind === 'assistant' && !finished.moved) setPanelExpanded(true);
+    }
 
-    box.querySelector('#wb-min').addEventListener('click', () => {
-      const body = box.querySelector('#wb-body');
-      body.style.display = body.style.display === 'none' ? '' : 'none';
+    document.addEventListener('pointerup', event => endDrag(event));
+    document.addEventListener('pointercancel', event => endDrag(event, true));
+    assistantButton.addEventListener('click', event => {
+      if (event.detail === 0) setPanelExpanded(true);
     });
+    window.addEventListener('resize', () => {
+      if (state.panelExpanded) {
+        const position = readPanelPosition();
+        applyPanelPosition(position.left, position.top);
+      } else {
+        const buttonSize = getElementSize(assistantButton, { width: 56, height: 56 });
+        const left = assistantButton.style.left ? parseFloat(assistantButton.style.left) :
+          window.innerWidth - buttonSize.width - 18;
+        const top = assistantButton.style.top ? parseFloat(assistantButton.style.top) : 90;
+        applyAssistantPosition(left, top);
+      }
+    });
+    window.visualViewport?.addEventListener('resize', () => {
+      if (state.panelExpanded) {
+        const position = readPanelPosition();
+        applyPanelPosition(position.left, position.top);
+      } else {
+        const buttonSize = getElementSize(assistantButton, { width: 56, height: 56 });
+        const left = assistantButton.style.left ? parseFloat(assistantButton.style.left) :
+          window.innerWidth - buttonSize.width - 18;
+        const top = assistantButton.style.top ? parseFloat(assistantButton.style.top) : 90;
+        applyAssistantPosition(left, top);
+      }
+    });
+
+    box.querySelector('#wb-min').addEventListener('click', () => setPanelExpanded(false));
 
     box.querySelector('#wb-scan').addEventListener('click', scanDirectory);
     box.querySelector('#wb-start').addEventListener('click', start);
