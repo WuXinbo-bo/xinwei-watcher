@@ -127,7 +127,7 @@ test('dragging the expanded header moves the panel and ignores its close button'
     pointer(f.window, f.window.document, 'pointerup', 700, 220);
 
     assert.equal(panel.hidden, false);
-    assert.equal(panel.style.left, '456px');
+    assert.equal(panel.style.left, '450px');
     assert.equal(panel.style.top, '200px');
     assert.equal(button.hidden, true);
   } finally { close(f); }
@@ -383,9 +383,10 @@ test('promotion uses one continuous SVG text path and opens only its external li
     const path = promo.querySelector('defs path');
     const textPath = promo.querySelector('textPath');
     const motion = promo.querySelector('.wb-promo-motion');
-    assert.match(path.getAttribute('d'), /^M .* Q .* Z$/);
+    assert.match(path.getAttribute('d'), /^M .* A .* Z$/);
     assert.match(textPath.getAttribute('href'), /^#wb-promo-path-/);
-    assert.match(textPath.textContent, /创世の鑫元.*创世の鑫元/);
+    assert.ok(textPath.querySelectorAll('tspan.wb-promo-word').length >= 8);
+    assert.equal(textPath.getAttribute('lengthAdjust'), 'spacingAndGlyphs');
     assert.equal(motion.getAttribute('attributeName'), 'startOffset');
     assert.equal(motion.getAttribute('repeatCount'), 'indefinite');
     assert.ok(Number(motion.getAttribute('to')) < 0);
@@ -427,9 +428,97 @@ test('hovering and keyboard focus pause the whole orbit and resume without reset
 
     links[0].focus();
     assert.equal(promo.classList.contains('is-paused'), true);
-    f.window.dispatchEvent(new f.window.Event('pageshow'));
+    const move = x => {
+      const event = new f.window.MouseEvent('pointermove', { bubbles: true });
+      Object.defineProperty(event, 'clientX', { value: x });
+      Object.defineProperty(event, 'clientY', { value: 20 });
+      f.window.document.dispatchEvent(event);
+    };
+    move(10);
+    f.window.dispatchEvent(new f.window.Event('blur'));
+    f.window.dispatchEvent(new f.window.Event('focus'));
     assert.equal(promo.classList.contains('is-paused'), false);
     assert.notEqual(f.window.document.activeElement, links[0]);
+    links[0].dispatchEvent(new f.window.MouseEvent('pointerover', { bubbles: true }));
+    assert.equal(promo.classList.contains('is-paused'), false);
+    move(11);
+    assert.equal(promo.classList.contains('is-paused'), false);
+    move(14);
+    links[0].dispatchEvent(new f.window.MouseEvent('pointerover', { bubbles: true }));
+    assert.equal(promo.classList.contains('is-paused'), true);
+  } finally { close(f); }
+});
+
+test('activating a promotion link clears retained focus even without browser leave events', async () => {
+  const f = fixture([]);
+  try {
+    setLayout(f);
+    f.window.document.getElementById('wb-assistant-button').click();
+    const promo = f.window.document.getElementById('wb-promotion');
+    const link = promo.querySelector('.wb-promo-link');
+    const text = link.querySelector('.wb-promo-word');
+    link.focus();
+    text.dispatchEvent(new f.window.MouseEvent('pointerover', { bubbles: true }));
+    assert.equal(promo.classList.contains('is-paused'), true);
+    // Avoid jsdom's unsupported navigation; test only the post-activation cleanup.
+    link.addEventListener('click', event => event.preventDefault());
+    text.dispatchEvent(new f.window.MouseEvent('click', { bubbles: true, cancelable: true }));
+    await new Promise(resolve => f.window.setTimeout(resolve, 5));
+    assert.equal(promo.classList.contains('is-paused'), false);
+    assert.equal(link.contains(f.window.document.activeElement), false);
+    assert.equal(f.api.state.running, false);
+  } finally { close(f); }
+});
+
+test('visibility and BFCache return resume SVG motion, while reduced motion stays static', async () => {
+  let preference;
+  let hidden = false;
+  let pauses = 0;
+  let resumes = 0;
+  const f = fixture([], {
+    beforeContent({ window }) {
+      preference = new window.EventTarget();
+      preference.matches = false;
+      window.matchMedia = () => preference;
+      window.SVGElement.prototype.pauseAnimations = () => { pauses++; };
+      window.SVGElement.prototype.unpauseAnimations = () => { resumes++; };
+      Object.defineProperty(window.document, 'hidden', { get: () => hidden });
+    }
+  });
+  try {
+    setLayout(f);
+    f.window.document.getElementById('wb-assistant-button').click();
+    await Promise.resolve();
+    const promo = f.window.document.getElementById('wb-promotion');
+    const link = promo.querySelector('.wb-promo-link');
+    assert.ok(resumes > 0);
+    link.focus();
+    hidden = true;
+    f.window.document.dispatchEvent(new f.window.Event('visibilitychange'));
+    assert.equal(promo.classList.contains('is-paused'), true);
+    hidden = false;
+    f.window.document.dispatchEvent(new f.window.Event('visibilitychange'));
+    assert.equal(promo.classList.contains('is-paused'), false);
+    assert.equal(link.contains(f.window.document.activeElement), false);
+    link.focus();
+    const restored = new f.window.Event('pageshow');
+    Object.defineProperty(restored, 'persisted', { value: true });
+    f.window.dispatchEvent(restored);
+    assert.equal(promo.classList.contains('is-paused'), false);
+
+    preference.matches = true;
+    preference.dispatchEvent(new f.window.Event('change'));
+    assert.equal(promo.classList.contains('is-paused'), true);
+    f.window.dispatchEvent(new f.window.Event('blur'));
+    f.window.dispatchEvent(new f.window.Event('focus'));
+    assert.equal(promo.classList.contains('is-paused'), true);
+    preference.matches = false;
+    preference.dispatchEvent(new f.window.Event('change'));
+    assert.equal(promo.classList.contains('is-paused'), false);
+    f.window.document.getElementById('wb-min').click();
+    assert.equal(promo.hidden, true);
+    assert.equal(promo.classList.contains('is-paused'), true);
+    assert.ok(pauses > 0);
   } finally { close(f); }
 });
 

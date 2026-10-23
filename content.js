@@ -683,7 +683,10 @@
     const assistantButton = document.getElementById('wb-assistant-button');
     if (assistantButton) assistantButton.hidden = routeHidden || state.panelExpanded;
     const promotion = document.getElementById('wb-promotion');
-    if (promotion) promotion.hidden = routeHidden || !state.panelExpanded || !PROMOTION_CONFIG.enabled;
+    if (promotion) {
+      const hidden = routeHidden || !state.panelExpanded || !PROMOTION_CONFIG.enabled;
+      if (promotion.hidden !== hidden) promotion.hidden = hidden;
+    }
     const control = getStartControl();
     const startButton = document.getElementById('wb-start');
     if (startButton) {
@@ -1219,11 +1222,10 @@
     layer.setAttribute('role', 'group');
     layer.setAttribute('aria-label', `${PROMOTION_CONFIG.brand} 独立商业服务，非课程平台服务`);
     const SVG_NS = 'http://www.w3.org/2000/svg';
-    const ribbon = [PROMOTION_CONFIG.brand, PROMOTION_CONFIG.tagline, ...PROMOTION_CONFIG.services]
-      .filter(Boolean).join('  ·  ');
+    const words = [PROMOTION_CONFIG.brand, PROMOTION_CONFIG.tagline, ...PROMOTION_CONFIG.services]
+      .filter(Boolean);
     const svg = document.createElementNS(SVG_NS, 'svg');
     svg.classList.add('wb-promo-svg');
-    svg.setAttribute('aria-hidden', 'true');
     svg.setAttribute('focusable', 'false');
     const defs = document.createElementNS(SVG_NS, 'defs');
     const path = document.createElementNS(SVG_NS, 'path');
@@ -1251,7 +1253,7 @@
     textPath.classList.add('wb-promo-text-path');
     textPath.setAttribute('href', `#${pathId}`);
     textPath.setAttribute('startOffset', '0');
-    textPath.textContent = `${ribbon}   ${ribbon}`;
+    textPath.setAttribute('lengthAdjust', 'spacingAndGlyphs');
     const motion = document.createElementNS(SVG_NS, 'animate');
     motion.classList.add('wb-promo-motion');
     motion.setAttribute('attributeName', 'startOffset');
@@ -1260,7 +1262,6 @@
     motion.setAttribute('dur', '100s');
     motion.setAttribute('calcMode', 'linear');
     motion.setAttribute('repeatCount', 'indefinite');
-    textPath.appendChild(motion);
     text.appendChild(textPath);
     link.appendChild(text);
     svg.appendChild(link);
@@ -1278,6 +1279,11 @@
 
     panel.appendChild(layer);
     let hovered = false;
+    let ignoreHoverPauseUntilPointerMoves = false;
+    let wasAway = false;
+    let lastPointerPosition = null;
+    let compact = false;
+    const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)');
     const pauseAnimations = () => {
       if (typeof svg.pauseAnimations === 'function') svg.pauseAnimations();
       layer.classList.add('is-paused');
@@ -1287,14 +1293,28 @@
       layer.classList.remove('is-paused');
     };
     const syncPause = () => {
-      const focused = layer.contains(document.activeElement);
-      if (layer.hidden || document.hidden || hovered || focused) pauseAnimations();
+      const ownerDocument = layer.ownerDocument;
+      const view = ownerDocument?.defaultView;
+      if (!view) {
+        pauseAnimations();
+        return;
+      }
+      const focused = layer.contains(ownerDocument.activeElement);
+      if (layer.hidden || ownerDocument.hidden || compact || reducedMotion?.matches ||
+        (hovered && !ignoreHoverPauseUntilPointerMoves) || focused) pauseAnimations();
       else resumeAnimations();
     };
-    const resetInteraction = () => {
+    const resetInteraction = (suppressStaleHover = false) => {
+      const ownerDocument = layer.ownerDocument;
+      if (!ownerDocument?.defaultView) {
+        pauseAnimations();
+        return;
+      }
       hovered = false;
-      if (layer.contains(document.activeElement) && typeof document.activeElement.blur === 'function') {
-        document.activeElement.blur();
+      ignoreHoverPauseUntilPointerMoves = suppressStaleHover;
+      if (layer.contains(ownerDocument.activeElement) &&
+        typeof ownerDocument.activeElement.blur === 'function') {
+        ownerDocument.activeElement.blur();
       }
       syncPause();
     };
@@ -1312,55 +1332,114 @@
     });
     layer.addEventListener('focusin', syncPause);
     layer.addEventListener('focusout', syncPause);
-    document.addEventListener('visibilitychange', () => {
-      if (document.hidden) pauseAnimations();
-      else resetInteraction();
+    layer.addEventListener('click', event => {
+      if (event.target.closest?.('a')) {
+        // Native new-tab activation may retain focus without firing a leave event.
+        window.setTimeout(() => resetInteraction(true), 0);
+      }
     });
-    window.addEventListener('pageshow', resetInteraction);
-    window.addEventListener('focus', resetInteraction);
+    document.addEventListener('pointermove', event => {
+      const moved = lastPointerPosition &&
+        Math.hypot(event.clientX - lastPointerPosition.x, event.clientY - lastPointerPosition.y) > 2;
+      lastPointerPosition = { x: event.clientX, y: event.clientY };
+      if (ignoreHoverPauseUntilPointerMoves && moved) {
+        ignoreHoverPauseUntilPointerMoves = false;
+        syncPause();
+      }
+    }, { passive: true });
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) {
+        wasAway = true;
+        pauseAnimations();
+      } else if (wasAway) {
+        wasAway = false;
+        resetInteraction(true);
+      }
+    });
+    window.addEventListener('pageshow', event => {
+      if (event.persisted) resetInteraction(true);
+      else syncPause();
+    });
+    window.addEventListener('focus', () => {
+      if (wasAway) {
+        wasAway = false;
+        resetInteraction(true);
+      } else syncPause();
+    });
     window.addEventListener('blur', () => {
+      wasAway = true;
       hovered = false;
       syncPause();
     });
+    reducedMotion?.addEventListener('change', syncPause);
+    new MutationObserver(() => {
+      if (layer.hidden) pauseAnimations();
+      else syncPause();
+    }).observe(layer, { attributes: true, attributeFilter: ['hidden'] });
     syncPause();
 
-    let extent = 26;
-    let compact = false;
+    let lastGeometry = '';
+    function renderRibbon(repeats) {
+      textPath.replaceChildren();
+      for (let copy = 0; copy < repeats * 2; copy++) {
+        for (const word of words) {
+          const span = document.createElementNS(SVG_NS, 'tspan');
+          span.classList.add('wb-promo-word');
+          span.textContent = word;
+          textPath.append(span, document.createTextNode('  ·  '));
+        }
+      }
+      textPath.appendChild(motion);
+    }
+    renderRibbon(1);
     return {
       syncVisibility(visible) {
         if (visible) resetInteraction();
         else pauseAnimations();
       },
       constraints(viewport) {
-        compact = viewport.width < 342 + extent * 2 || viewport.height < 180;
+        compact = viewport.width < 406 || viewport.height < 180;
         layer.dataset.compact = String(compact);
         panel.style.setProperty('--wb-shell-height', compact ? '56px' : '64px');
-        return compact ? { x: 13, top: 8, bottom: 48 } : { x: extent, top: 32, bottom: 32 };
+        syncPause();
+        return compact ? { x: 13, top: 8, bottom: 48 } : { x: 32, top: 32, bottom: 32 };
       },
       layout({ width, height }) {
         if (!width || !height) return;
         if (compact) {
-          svg.setAttribute('viewBox', '0 0 1 1');
           compactLink.hidden = false;
           return;
         }
         compactLink.hidden = true;
-        const side = extent;
+        width = panel.clientWidth || width;
+        height = panel.clientHeight || height;
+        const geometry = `${width}:${height}`;
+        if (geometry === lastGeometry) return;
+        lastGeometry = geometry;
+        const side = 16;
         const left = -side, right = width + side, top = -side, bottom = height + side;
-        const radius = Math.min(18, Math.max(8, Math.min((right - left) / 4, (bottom - top) / 4)));
+        const radius = Math.min(28, Math.max(8, Math.min((right - left) / 4, (bottom - top) / 4)));
         const horizontal = right - left - 2 * radius;
         const vertical = bottom - top - 2 * radius;
-        const perimeter = 2 * (horizontal + vertical) + 2 * Math.PI * radius;
+        const estimatedPerimeter = 2 * (horizontal + vertical) + 2 * Math.PI * radius;
         const d = `M ${left + radius} ${top} H ${right - radius} ` +
-          `Q ${right} ${top} ${right} ${top + radius} V ${bottom - radius} ` +
-          `Q ${right} ${bottom} ${right - radius} ${bottom} H ${left + radius} ` +
-          `Q ${left} ${bottom} ${left} ${bottom - radius} V ${top + radius} ` +
-          `Q ${left} ${top} ${left + radius} ${top} Z`;
+          `A ${radius} ${radius} 0 0 1 ${right} ${top + radius} V ${bottom - radius} ` +
+          `A ${radius} ${radius} 0 0 1 ${right - radius} ${bottom} H ${left + radius} ` +
+          `A ${radius} ${radius} 0 0 1 ${left} ${bottom - radius} V ${top + radius} ` +
+          `A ${radius} ${radius} 0 0 1 ${left + radius} ${top} Z`;
         path.setAttribute('d', d);
-        svg.setAttribute('viewBox', `${left} ${top} ${right - left} ${bottom - top}`);
-        textPath.setAttribute('textLength', String(Math.round(perimeter * 2)));
-        motion.setAttribute('to', String(Math.round(-perimeter)));
+        const perimeter = typeof path.getTotalLength === 'function'
+          ? path.getTotalLength() : estimatedPerimeter;
+        svg.setAttribute('viewBox', `-32 -32 ${width + 64} ${height + 64}`);
+        textPath.removeAttribute('textLength');
+        renderRibbon(1);
+        const measured = typeof text.getComputedTextLength === 'function'
+          ? text.getComputedTextLength() / 2 : words.join('  ·  ').length * 8;
+        renderRibbon(Math.max(1, Math.round(perimeter / Math.max(1, measured))));
+        textPath.setAttribute('textLength', String(perimeter * 2));
+        motion.setAttribute('to', String(-perimeter));
         motion.setAttribute('dur', `${Math.max(80, Math.round(perimeter / 20))}s`);
+        syncPause();
       }
     };
   }
@@ -1396,7 +1475,8 @@
       }
       #wb-promotion[hidden]{display:none!important}
       #wb-promotion .wb-promo-svg{
-        position:absolute;inset:0;width:100%;height:100%;overflow:visible;
+        position:absolute;left:-32px;top:-32px;
+        width:calc(100% + 64px);height:calc(100% + 64px);overflow:visible;
         color:#40536d;pointer-events:none;
       }
       #wb-promotion .wb-promo-link{
@@ -1404,10 +1484,12 @@
       }
       #wb-promotion .wb-promo-text{
         paint-order:stroke;stroke:rgba(255,255,255,.92);stroke-width:4px;
+      }
+      #wb-promotion .wb-promo-word{
         transition:font-size .16s ease,fill .16s ease;
       }
-      #wb-promotion .wb-promo-link:hover .wb-promo-text,
-      #wb-promotion .wb-promo-link:focus-visible .wb-promo-text{
+      #wb-promotion .wb-promo-word:hover,
+      #wb-promotion .wb-promo-link:focus-visible .wb-promo-word{
         font-size:13px;fill:#1557b0;
       }
       #wb-promotion .wb-promo-link:focus-visible{outline:2px solid #005eff;outline-offset:3px}
@@ -1424,8 +1506,7 @@
       #wb-promotion[data-compact="true"] .wb-promo-svg{display:none}
       #wb-promotion[data-compact="true"] .wb-promo-compact{display:block}
       @media(prefers-reduced-motion:reduce){
-        #wb-promotion .wb-promo-motion{display:none}
-        #wb-promotion .wb-promo-text{transition:none}
+        #wb-promotion .wb-promo-word{transition:none}
       }
       #wb-study-ui .hd{
         flex:0 0 auto;
