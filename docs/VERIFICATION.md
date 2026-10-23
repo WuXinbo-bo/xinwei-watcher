@@ -22,7 +22,7 @@
 - 页面失焦、标签隐藏、返回页面以及点击后都会清理过期悬停/焦点状态；恢复系统“减少动态效果”时保持静止。小视口使用面板外的单行链接兜底。
 - 商业推广仍由 `PROMOTION_CONFIG` 独立启用/关闭，不新增权限、不影响任务运行。原面板内部内容及任务按钮保持现有结构。
 - `npm ci --ignore-scripts`：成功，安装 39 个包；现有依赖 `whatwg-encoding@3.1.1` 有弃用警告。
-- `npm run check`：成功。最终完整测试结果记录在本节更新项；jsdom UI 专项覆盖返回恢复、BFCache、减少动态效果与配置关闭。
+- `npm run check`：成功；`npm test`：386 项通过，0 失败、0 取消、0 跳过，耗时约 73.5 秒。jsdom UI 专项覆盖返回恢复、BFCache、减少动态效果与配置关闭。
 - 使用隔离的 Microsoft Edge `155.0.4283.62`、实际加载本地解压扩展和测试用本地页面验证：扩展 PNG（1254×1254）加载成功；圆角边轨字形角度验证到约 90°侧边及圆角中间角度；悬停 13px；点击打开目标网站；返回后动画偏移继续；折叠、390px 窄视口和减少动态效果均通过。测试未启动课程任务。
 - 浏览器截图：`/Users/caixindan/Desktop/工作台/xinwei-watcher-ui-verification/collapsed.png`、`desktop.png`、`hover.png`、`mobile.png`。
 - 隔离 Edge 测试页面使用本地 fixture，不是 Beeline 真实课程 UI；原作者代码的真实课程播放流程仍由既有测试覆盖，未在此次浏览器截图测试中启动。
