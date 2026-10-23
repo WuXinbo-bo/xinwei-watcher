@@ -1253,7 +1253,6 @@
     textPath.classList.add('wb-promo-text-path');
     textPath.setAttribute('href', `#${pathId}`);
     textPath.setAttribute('startOffset', '0');
-    textPath.setAttribute('lengthAdjust', 'spacingAndGlyphs');
     const motion = document.createElementNS(SVG_NS, 'animate');
     motion.classList.add('wb-promo-motion');
     motion.setAttribute('attributeName', 'startOffset');
@@ -1385,19 +1384,18 @@
     syncPause();
 
     let lastGeometry = '';
-    function renderRibbon(repeats) {
+    function renderRibbon() {
       textPath.replaceChildren();
-      for (let copy = 0; copy < repeats * 2; copy++) {
-        for (const word of words) {
-          const span = document.createElementNS(SVG_NS, 'tspan');
-          span.classList.add('wb-promo-word');
-          span.textContent = word;
-          textPath.append(span, document.createTextNode('  ·  '));
-        }
-      }
+      words.forEach((word, index) => {
+        if (index > 0) textPath.appendChild(document.createTextNode(' · '));
+        const span = document.createElementNS(SVG_NS, 'tspan');
+        span.classList.add('wb-promo-word');
+        span.textContent = word;
+        textPath.appendChild(span);
+      });
       textPath.appendChild(motion);
     }
-    renderRibbon(1);
+    renderRibbon();
     return {
       syncVisibility(visible) {
         if (visible) resetInteraction();
@@ -1428,22 +1426,16 @@
         const horizontal = right - left - 2 * radius;
         const vertical = bottom - top - 2 * radius;
         const estimatedPerimeter = 2 * (horizontal + vertical) + 2 * Math.PI * radius;
-        const d = `M ${left + radius} ${top} H ${right - radius} ` +
+        const loop = `M ${left + radius} ${top} H ${right - radius} ` +
           `A ${radius} ${radius} 0 0 1 ${right} ${top + radius} V ${bottom - radius} ` +
           `A ${radius} ${radius} 0 0 1 ${right - radius} ${bottom} H ${left + radius} ` +
           `A ${radius} ${radius} 0 0 1 ${left} ${bottom - radius} V ${top + radius} ` +
           `A ${radius} ${radius} 0 0 1 ${left + radius} ${top} Z`;
-        path.setAttribute('d', d);
+        path.setAttribute('d', `${loop} ${loop}`);
         const perimeter = typeof path.getTotalLength === 'function'
-          ? path.getTotalLength() : estimatedPerimeter;
+          ? path.getTotalLength() / 2 : estimatedPerimeter;
         svg.setAttribute('viewBox', `-32 -32 ${width + 64} ${height + 64}`);
-        textPath.removeAttribute('textLength');
-        renderRibbon(1);
-        const measured = typeof text.getComputedTextLength === 'function'
-          ? text.getComputedTextLength() / 2 : words.join('  ·  ').length * 8;
-        renderRibbon(Math.max(1, Math.round(perimeter / Math.max(1, measured))));
-        textPath.setAttribute('textLength', String(perimeter * 2));
-        motion.setAttribute('to', String(-perimeter));
+        motion.setAttribute('to', String(perimeter));
         motion.setAttribute('dur', `${Math.max(80, Math.round(perimeter / 20))}s`);
         syncPause();
       }

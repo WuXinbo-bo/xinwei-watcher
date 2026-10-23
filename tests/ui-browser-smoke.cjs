@@ -47,13 +47,38 @@ async function main() {
     assert.equal(await page.locator('#wb-start').textContent(), '开始');
     assert.equal(await page.locator('#wb-playback-target').getAttribute('min'), '80');
     assert.equal(await page.locator('#wb-playback-target').getAttribute('max'), '100');
+    assert.deepEqual(await page.locator('textPath tspan.wb-promo-word').allTextContents(),
+      ['创世の鑫元', '让灵感接入 AI', 'AI API 中转', 'GPT 会员代充值']);
+    const orbit = await page.locator('textPath').evaluate(tp => {
+      const path = tp.ownerSVGElement.querySelector('defs path');
+      return {
+        textLength: tp.getComputedTextLength(),
+        loopLength: path.getTotalLength() / 2,
+        travel: Number(tp.querySelector('animate').getAttribute('to'))
+      };
+    });
+    assert.ok(orbit.textLength < orbit.loopLength, 'the single message leaves an empty orbit segment');
+    assert.ok(Math.abs(orbit.travel - orbit.loopLength) < 2, 'the message travels exactly one lap');
     await page.mouse.move(10, 10);
     const readMotion = () => page.locator('textPath').evaluate(tp => tp.startOffset.animVal.value);
     const initialOffset = await readMotion();
     await page.waitForTimeout(300);
     assert.notEqual(await readMotion(), initialOffset, 'visible text must move');
-    const rotations = await page.locator('textPath').evaluate(tp =>
-      Array.from({ length: tp.getNumberOfChars() }, (_, i) => tp.getRotationOfChar(i)));
+    const rotations = await page.locator('textPath').evaluate(tp => {
+      const svg = tp.ownerSVGElement;
+      const duration = Number.parseFloat(tp.querySelector('animate').getAttribute('dur'));
+      const sampled = [];
+      svg.pauseAnimations();
+      for (let frame = 0; frame <= 100; frame += 1) {
+        svg.setCurrentTime(duration * frame / 100);
+        for (let i = 0; i < tp.getNumberOfChars(); i += 1) {
+          sampled.push(tp.getRotationOfChar(i));
+        }
+      }
+      svg.setCurrentTime(0);
+      svg.unpauseAnimations();
+      return sampled;
+    });
     assert.ok(rotations.some(angle => Math.abs(Math.abs(angle) - 90) < 2), 'side glyphs rotate');
     assert.ok(rotations.some(angle => Math.abs(angle) > 5 && Math.abs(angle) < 85),
       'corner glyphs bend along the path');

@@ -383,13 +383,17 @@ test('promotion uses one continuous SVG text path and opens only its external li
     const path = promo.querySelector('defs path');
     const textPath = promo.querySelector('textPath');
     const motion = promo.querySelector('.wb-promo-motion');
-    assert.match(path.getAttribute('d'), /^M .* A .* Z$/);
+    assert.equal((path.getAttribute('d').match(/\bM\b/g) || []).length, 2);
+    assert.equal((path.getAttribute('d').match(/\bZ\b/g) || []).length, 2);
     assert.match(textPath.getAttribute('href'), /^#wb-promo-path-/);
-    assert.ok(textPath.querySelectorAll('tspan.wb-promo-word').length >= 8);
-    assert.equal(textPath.getAttribute('lengthAdjust'), 'spacingAndGlyphs');
+    assert.deepEqual(
+      Array.from(textPath.querySelectorAll('tspan.wb-promo-word'), span => span.textContent),
+      ['创世の鑫元', '让灵感接入 AI', 'AI API 中转', 'GPT 会员代充值']
+    );
+    assert.equal(textPath.hasAttribute('textLength'), false);
     assert.equal(motion.getAttribute('attributeName'), 'startOffset');
     assert.equal(motion.getAttribute('repeatCount'), 'indefinite');
-    assert.ok(Number(motion.getAttribute('to')) < 0);
+    assert.ok(Number(motion.getAttribute('to')) > 0);
     assert.equal(promo.dataset.compact, 'false');
 
     const injectedStyle = [...f.window.document.querySelectorAll('style')]
