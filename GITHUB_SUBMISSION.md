@@ -29,7 +29,7 @@ git push -u origin feature/ui-floating-assistant-orbit
 - Head repository：`scxai-top/xinwei-watcher`
 - Compare branch：`feature/ui-floating-assistant-orbit`
 
-PR 标题使用上方建议标题，正文使用下方 `PR 描述` 中的 Markdown 内容，不包含代码围栏本身。助手没有代为推送、创建 PR、Tag 或 Release。
+PR 标题使用上方建议标题，正文使用下方 `PR 描述` 中的 Markdown 内容，不包含代码围栏本身。本次候选分支已推送至 Fork；是否接受及合并由原作者审核决定。
 
 ## 上传范围
 
