@@ -1282,6 +1282,7 @@
     let ignoreHoverPauseUntilPointerMoves = false;
     let wasAway = false;
     let lastPointerPosition = null;
+    let resumedPointerPosition = null;
     let compact = false;
     const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)');
     const pauseAnimations = () => {
@@ -1312,6 +1313,7 @@
       }
       hovered = false;
       ignoreHoverPauseUntilPointerMoves = suppressStaleHover;
+      resumedPointerPosition = lastPointerPosition;
       if (layer.contains(ownerDocument.activeElement) &&
         typeof ownerDocument.activeElement.blur === 'function') {
         ownerDocument.activeElement.blur();
@@ -1339,10 +1341,14 @@
       }
     });
     document.addEventListener('pointermove', event => {
-      const moved = lastPointerPosition &&
-        Math.hypot(event.clientX - lastPointerPosition.x, event.clientY - lastPointerPosition.y) > 2;
       lastPointerPosition = { x: event.clientX, y: event.clientY };
-      if (ignoreHoverPauseUntilPointerMoves && moved) {
+      if (!ignoreHoverPauseUntilPointerMoves) return;
+      if (!resumedPointerPosition) {
+        resumedPointerPosition = lastPointerPosition;
+        return;
+      }
+      if (Math.hypot(event.clientX - resumedPointerPosition.x,
+        event.clientY - resumedPointerPosition.y) > 2) {
         ignoreHoverPauseUntilPointerMoves = false;
         syncPause();
       }

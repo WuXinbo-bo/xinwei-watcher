@@ -24,3 +24,16 @@ npm test
 - 课程末平台核对、异常资源重试、日志保留和人工阻断场景。
 
 本文件描述测试设计；本次实际通过、失败、跳过和取消数量见 [`docs/VERIFICATION.md`](../docs/VERIFICATION.md)。
+
+## 可选浏览器 UI 验收
+
+`ui-browser-smoke.cjs` 不包含在 `npm test` 中。它使用测试环境提供的 Playwright，在独立临时配置中实际加载扩展，以本地 fixture 拦截页面与外链，不访问课程数据或启动课程任务。项目运行依赖与锁文件不因此增加 Playwright。
+
+在已提供 Playwright 的环境执行，可通过 `NODE_PATH` 指向该测试工具目录：
+
+```sh
+BROWSER_EXECUTABLE="/path/to/Edge" UI_ARTIFACTS_DIR="/tmp/xinwei-ui-results" \
+  node tests/ui-browser-smoke.cjs
+```
+
+验收项包括扩展本地图片、默认收起、字形圆角转向、悬停放大、主动外链与返回恢复、窄视口兜底和减少动态效果。截图为本地 fixture 上的真实浏览器渲染，不代表真实课程验收。

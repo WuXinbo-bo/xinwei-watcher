@@ -1,6 +1,6 @@
 # 验证说明
 
-本文件记录 2026-10-21 的候选版基线核验，以及 2026-10-22 的悬浮 UI 改造验证（Asia/Taipei）。本地合成测试与真实浏览器观察分别列出。
+本文件记录 2026-10-21 的候选版基线核验，以及 2026-10-22 至 23 日的悬浮 UI 改造验证（Asia/Taipei）。本地合成测试与真实浏览器观察分别列出。
 
 ## 2026-10-22 悬浮 UI 改造验证
 
@@ -24,7 +24,8 @@
 - `npm ci --ignore-scripts`：成功，安装 39 个包；现有依赖 `whatwg-encoding@3.1.1` 有弃用警告。
 - `npm run check`：成功；`npm test`：386 项通过，0 失败、0 取消、0 跳过，耗时约 73.5 秒。jsdom UI 专项覆盖返回恢复、BFCache、减少动态效果与配置关闭。
 - 使用隔离的 Microsoft Edge `155.0.4283.62`、实际加载本地解压扩展和测试用本地页面验证：扩展 PNG（1254×1254）加载成功；圆角边轨字形角度验证到约 90°侧边及圆角中间角度；悬停 13px；点击打开目标网站；返回后动画偏移继续；折叠、390px 窄视口和减少动态效果均通过。测试未启动课程任务。
-- 浏览器截图：`/Users/caixindan/Desktop/工作台/xinwei-watcher-ui-verification/collapsed.png`、`desktop.png`、`hover.png`、`mobile.png`。
+- 可重复的浏览器验证脚本为 `tests/ui-browser-smoke.cjs`；输出 `collapsed.png`、`desktop.png`、`hover.png` 和 `mobile.png`。本地输出路径通过 `UI_ARTIFACTS_DIR` 指定，不提交个人浏览器配置与截图目录。
+- 有一次同时运行浏览器和完整套件的高负载测试出现既有网关用例观察超时（385/386）；关闭隔离浏览器后完整复跑 386/386 通过。未调整业务测试超时或隐藏失败。仍有既有可选日志诊断 `任务日志暂未保存： location is not defined`。
 - 隔离 Edge 测试页面使用本地 fixture，不是 Beeline 真实课程 UI；原作者代码的真实课程播放流程仍由既有测试覆盖，未在此次浏览器截图测试中启动。
 
 ## 基线和版本

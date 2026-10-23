@@ -443,7 +443,9 @@ test('hovering and keyboard focus pause the whole orbit and resume without reset
     assert.equal(promo.classList.contains('is-paused'), false);
     move(11);
     assert.equal(promo.classList.contains('is-paused'), false);
-    move(14);
+    move(12);
+    assert.equal(promo.classList.contains('is-paused'), false);
+    move(13);
     links[0].dispatchEvent(new f.window.MouseEvent('pointerover', { bubbles: true }));
     assert.equal(promo.classList.contains('is-paused'), true);
   } finally { close(f); }
