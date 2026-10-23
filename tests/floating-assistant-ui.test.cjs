@@ -127,7 +127,7 @@ test('dragging the expanded header moves the panel and ignores its close button'
     pointer(f.window, f.window.document, 'pointerup', 700, 220);
 
     assert.equal(panel.hidden, false);
-    assert.equal(panel.style.left, '342px');
+    assert.equal(panel.style.left, '456px');
     assert.equal(panel.style.top, '200px');
     assert.equal(button.hidden, true);
   } finally { close(f); }
@@ -239,18 +239,18 @@ test('dragging the collapsed button preserves its vertical position when expande
   } finally { close(f); }
 });
 
-test('short viewports constrain the panel and keep its external promotion rail in view', () => {
+test('short viewports constrain the panel and keep the compact promotion link in view', () => {
   const f = fixture([]);
   try {
     setLayout(f);
-    Object.defineProperty(f.window, 'innerWidth', { configurable: true, value: 420 });
+    Object.defineProperty(f.window, 'innerWidth', { configurable: true, value: 360 });
     Object.defineProperty(f.window, 'innerHeight', { configurable: true, value: 240 });
     f.window.dispatchEvent(new f.window.Event('resize'));
 
     const button = f.window.document.getElementById('wb-assistant-button');
     const panel = f.window.document.getElementById('wb-study-ui');
-    pointer(f.window, button, 'pointerdown', 390, 110);
-    pointer(f.window, f.window.document, 'pointerup', 390, 110);
+    pointer(f.window, button, 'pointerdown', 330, 110);
+    pointer(f.window, f.window.document, 'pointerup', 330, 110);
 
     const panelRect = panel.getBoundingClientRect();
     assert.equal(panel.hidden, false);
@@ -258,6 +258,7 @@ test('short viewports constrain the panel and keep its external promotion rail i
     assert.ok(panelRect.top >= 8);
     assert.ok(panelRect.bottom + 48 <= f.window.innerHeight);
     assert.equal(f.window.document.getElementById('wb-promotion').dataset.compact, 'true');
+    assert.equal(f.window.document.querySelector('.wb-promo-compact').hidden, false);
     assert.equal(f.window.document.getElementById('wb-body').style.overflowY, '');
 
     const injectedStyle = [...f.window.document.querySelectorAll('style')]
@@ -352,7 +353,7 @@ test('non-primary and canceled pointers do not activate the floating assistant',
   } finally { close(f); }
 });
 
-test('promotion words share one closed orbit and each opens only its external link', () => {
+test('promotion uses one continuous SVG text path and opens only its external link', () => {
   const f = fixture([]);
   try {
     setLayout(f);
@@ -361,7 +362,8 @@ test('promotion words share one closed orbit and each opens only its external li
     assert.ok(promo);
     assert.equal(promo.hidden, true);
     assert.equal(promo.querySelectorAll('.wb-promo-edge').length, 0);
-    assert.equal(promo.querySelectorAll('a').length, 4);
+    assert.equal(promo.querySelectorAll('.wb-promo-link').length, 1);
+    assert.equal(promo.querySelectorAll('.wb-promo-compact').length, 1);
 
     pointer(f.window, button, 'pointerdown', 980, 110);
     pointer(f.window, f.window.document, 'pointerup', 980, 110);
@@ -373,25 +375,29 @@ test('promotion words share one closed orbit and each opens only its external li
     assert.match(promo.textContent, /GPT 会员代充值/);
     assert.doesNotMatch(promo.textContent, /推广|了解更多/);
     assert.match(promo.getAttribute('aria-label'), /非课程平台服务/);
-    for (const [index, link] of [...promo.querySelectorAll('a')].entries()) {
-      assert.equal(link.href, 'https://88cf.scxai.top/');
-      assert.equal(link.target, '_blank');
-      assert.match(link.rel, /noopener.*sponsored/);
-      assert.match(link.getAttribute('aria-label'), /外部商业服务/);
-      assert.equal(link.style.getPropertyValue('--wb-orbit-start'), `${index * 25}%`);
-      assert.equal(link.style.getPropertyValue('--wb-orbit-end'), `${100 + index * 25}%`);
-    }
-    assert.match(promo.style.getPropertyValue('--wb-promo-path'), /^path\("M .* Q .* Z"\)$/);
+    const link = promo.querySelector('.wb-promo-link');
+    assert.equal(link.getAttribute('href'), 'https://88cf.scxai.top/');
+    assert.equal(link.getAttribute('target'), '_blank');
+    assert.match(link.getAttribute('rel'), /noopener.*sponsored/);
+    assert.match(link.getAttribute('aria-label'), /外部商业服务/);
+    const path = promo.querySelector('defs path');
+    const textPath = promo.querySelector('textPath');
+    const motion = promo.querySelector('.wb-promo-motion');
+    assert.match(path.getAttribute('d'), /^M .* Q .* Z$/);
+    assert.match(textPath.getAttribute('href'), /^#wb-promo-path-/);
+    assert.match(textPath.textContent, /创世の鑫元.*创世の鑫元/);
+    assert.equal(motion.getAttribute('attributeName'), 'startOffset');
+    assert.equal(motion.getAttribute('repeatCount'), 'indefinite');
+    assert.ok(Number(motion.getAttribute('to')) < 0);
     assert.equal(promo.dataset.compact, 'false');
 
     const injectedStyle = [...f.window.document.querySelectorAll('style')]
       .map(style => style.textContent).join('\n');
     assert.match(injectedStyle, /prefers-reduced-motion:\s*reduce/);
     assert.match(injectedStyle, /#wb-promotion\s*\{[^}]*pointer-events:none/s);
-    assert.match(injectedStyle, /offset-rotate:0deg/);
-    assert.match(injectedStyle, /animation:wb-promo-orbit/);
-    assert.match(injectedStyle, /padding:3px/);
-    assert.match(injectedStyle, /transform:scale\(1\.45\)/);
+    assert.match(injectedStyle, /wb-promo-svg/);
+    assert.match(injectedStyle, /font-size:13px/);
+    assert.doesNotMatch(injectedStyle, /offset-rotate/);
   } finally { close(f); }
 });
 
@@ -402,7 +408,7 @@ test('hovering and keyboard focus pause the whole orbit and resume without reset
     f.window.document.getElementById('wb-assistant-button').click();
     const promo = f.window.document.getElementById('wb-promotion');
     const links = promo.querySelectorAll('a');
-    const path = promo.style.getPropertyValue('--wb-promo-path');
+    const path = promo.querySelector('defs path').getAttribute('d');
     links[0].dispatchEvent(new f.window.MouseEvent('pointerover', { bubbles: true }));
     assert.equal(promo.classList.contains('is-paused'), true);
     links[0].dispatchEvent(new f.window.MouseEvent('pointerout', {
@@ -417,7 +423,13 @@ test('hovering and keyboard focus pause the whole orbit and resume without reset
     assert.equal(promo.classList.contains('is-paused'), true);
     links[0].blur();
     assert.equal(promo.classList.contains('is-paused'), false);
-    assert.equal(promo.style.getPropertyValue('--wb-promo-path'), path);
+    assert.equal(promo.querySelector('defs path').getAttribute('d'), path);
+
+    links[0].focus();
+    assert.equal(promo.classList.contains('is-paused'), true);
+    f.window.dispatchEvent(new f.window.Event('pageshow'));
+    assert.equal(promo.classList.contains('is-paused'), false);
+    assert.notEqual(f.window.document.activeElement, links[0]);
   } finally { close(f); }
 });
 
@@ -436,7 +448,8 @@ test('narrow viewports use a compact external brand link and recover the orbit o
     Object.defineProperty(f.window, 'innerWidth', { configurable: true, value: 1200 });
     f.window.dispatchEvent(new f.window.Event('resize'));
     assert.equal(promo.dataset.compact, 'false');
-    assert.match(promo.style.getPropertyValue('--wb-promo-path'), / Z"\)$/);
+    assert.match(promo.querySelector('defs path').getAttribute('d'), / Z$/);
+    assert.equal(promo.querySelector('.wb-promo-compact').hidden, true);
   } finally { close(f); }
 });
 

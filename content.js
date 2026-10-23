@@ -1218,28 +1218,88 @@
     layer.hidden = getRoute() === 'other' || !state.panelExpanded;
     layer.setAttribute('role', 'group');
     layer.setAttribute('aria-label', `${PROMOTION_CONFIG.brand} 独立商业服务，非课程平台服务`);
-    const words = [PROMOTION_CONFIG.brand, PROMOTION_CONFIG.tagline, ...PROMOTION_CONFIG.services];
-    for (const [index, text] of words.entries()) {
-      const link = document.createElement('a');
-      link.className = 'wb-promo-link';
-      link.href = PROMOTION_CONFIG.url;
-      link.target = '_blank';
-      link.rel = 'noopener noreferrer sponsored';
-      link.title = `${PROMOTION_CONFIG.brand} · ${text}（外部商业服务，新标签页打开）`;
-      link.setAttribute('aria-label', link.title);
-      link.style.setProperty('--wb-orbit-start', `${index * 100 / words.length}%`);
-      link.style.setProperty('--wb-orbit-end', `${100 + index * 100 / words.length}%`);
-      const label = document.createElement('span');
-      label.textContent = text;
-      link.appendChild(label);
-      layer.appendChild(link);
-    }
+    const SVG_NS = 'http://www.w3.org/2000/svg';
+    const ribbon = [PROMOTION_CONFIG.brand, PROMOTION_CONFIG.tagline, ...PROMOTION_CONFIG.services]
+      .filter(Boolean).join('  ·  ');
+    const svg = document.createElementNS(SVG_NS, 'svg');
+    svg.classList.add('wb-promo-svg');
+    svg.setAttribute('aria-hidden', 'true');
+    svg.setAttribute('focusable', 'false');
+    const defs = document.createElementNS(SVG_NS, 'defs');
+    const path = document.createElementNS(SVG_NS, 'path');
+    const pathId = `wb-promo-path-${Math.random().toString(36).slice(2)}`;
+    path.id = pathId;
+    path.setAttribute('fill', 'none');
+    defs.appendChild(path);
+    svg.appendChild(defs);
+
+    const link = document.createElementNS(SVG_NS, 'a');
+    link.classList.add('wb-promo-link');
+    link.setAttribute('href', PROMOTION_CONFIG.url);
+    link.setAttribute('target', '_blank');
+    link.setAttribute('rel', 'noopener noreferrer sponsored');
+    link.setAttribute('aria-label',
+      `${PROMOTION_CONFIG.brand}：${PROMOTION_CONFIG.services.join('、')}（外部商业服务，新标签页打开）`);
+    link.setAttribute('tabindex', '0');
+    const text = document.createElementNS(SVG_NS, 'text');
+    text.classList.add('wb-promo-text');
+    text.setAttribute('font-size', '11');
+    text.setAttribute('font-family', 'PingFang SC, Arial, sans-serif');
+    text.setAttribute('letter-spacing', '0');
+    text.setAttribute('fill', 'currentColor');
+    const textPath = document.createElementNS(SVG_NS, 'textPath');
+    textPath.classList.add('wb-promo-text-path');
+    textPath.setAttribute('href', `#${pathId}`);
+    textPath.setAttribute('startOffset', '0');
+    textPath.textContent = `${ribbon}   ${ribbon}`;
+    const motion = document.createElementNS(SVG_NS, 'animate');
+    motion.classList.add('wb-promo-motion');
+    motion.setAttribute('attributeName', 'startOffset');
+    motion.setAttribute('from', '0');
+    motion.setAttribute('to', '0');
+    motion.setAttribute('dur', '100s');
+    motion.setAttribute('calcMode', 'linear');
+    motion.setAttribute('repeatCount', 'indefinite');
+    textPath.appendChild(motion);
+    text.appendChild(textPath);
+    link.appendChild(text);
+    svg.appendChild(link);
+    layer.appendChild(svg);
+
+    const compactLink = document.createElement('a');
+    compactLink.className = 'wb-promo-compact';
+    compactLink.href = PROMOTION_CONFIG.url;
+    compactLink.target = '_blank';
+    compactLink.rel = 'noopener noreferrer sponsored';
+    compactLink.textContent = `${PROMOTION_CONFIG.brand} · ${PROMOTION_CONFIG.services.join(' · ')}`;
+    compactLink.setAttribute('aria-label',
+      `${PROMOTION_CONFIG.brand}：${PROMOTION_CONFIG.services.join('、')}（外部商业服务，新标签页打开）`);
+    layer.appendChild(compactLink);
+
     panel.appendChild(layer);
     let hovered = false;
-    const syncPause = () => layer.classList.toggle('is-paused',
-      hovered || layer.contains(document.activeElement));
+    const pauseAnimations = () => {
+      if (typeof svg.pauseAnimations === 'function') svg.pauseAnimations();
+      layer.classList.add('is-paused');
+    };
+    const resumeAnimations = () => {
+      if (typeof svg.unpauseAnimations === 'function') svg.unpauseAnimations();
+      layer.classList.remove('is-paused');
+    };
+    const syncPause = () => {
+      const focused = layer.contains(document.activeElement);
+      if (layer.hidden || document.hidden || hovered || focused) pauseAnimations();
+      else resumeAnimations();
+    };
+    const resetInteraction = () => {
+      hovered = false;
+      if (layer.contains(document.activeElement) && typeof document.activeElement.blur === 'function') {
+        document.activeElement.blur();
+      }
+      syncPause();
+    };
     layer.addEventListener('pointerover', event => {
-      if (event.target.closest('a')) {
+      if (event.target.closest?.('a')) {
         hovered = true;
         syncPause();
       }
@@ -1251,36 +1311,56 @@
       }
     });
     layer.addEventListener('focusin', syncPause);
-    layer.addEventListener('focusout', event => {
-      layer.classList.toggle('is-paused', hovered || layer.contains(event.relatedTarget));
+    layer.addEventListener('focusout', syncPause);
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) pauseAnimations();
+      else resetInteraction();
     });
+    window.addEventListener('pageshow', resetInteraction);
+    window.addEventListener('focus', resetInteraction);
+    window.addEventListener('blur', () => {
+      hovered = false;
+      syncPause();
+    });
+    syncPause();
 
-    let extent = 140;
+    let extent = 26;
     let compact = false;
     return {
+      syncVisibility(visible) {
+        if (visible) resetInteraction();
+        else pauseAnimations();
+      },
       constraints(viewport) {
-        // Reserve the enlarged word's full width at the side rails, not just its center.
-        const widths = [...layer.querySelectorAll('span')].map(label => label.offsetWidth);
-        if (Math.max(...widths) > 0) extent = Math.ceil(Math.max(...widths) * 1.45 + 18);
         compact = viewport.width < 342 + extent * 2 || viewport.height < 180;
         layer.dataset.compact = String(compact);
         panel.style.setProperty('--wb-shell-height', compact ? '56px' : '64px');
         return compact ? { x: 13, top: 8, bottom: 48 } : { x: extent, top: 32, bottom: 32 };
       },
       layout({ width, height }) {
-        if (compact || !width || !height) return;
-        const side = extent / 2 + 3;
-        const left = -side, right = width + side, top = -16, bottom = height + 16;
-        const radius = 18;
-        // One closed clockwise rounded rectangle, shared by every upright word.
-        const path = `M ${left + radius} ${top} H ${right - radius} ` +
+        if (!width || !height) return;
+        if (compact) {
+          svg.setAttribute('viewBox', '0 0 1 1');
+          compactLink.hidden = false;
+          return;
+        }
+        compactLink.hidden = true;
+        const side = extent;
+        const left = -side, right = width + side, top = -side, bottom = height + side;
+        const radius = Math.min(18, Math.max(8, Math.min((right - left) / 4, (bottom - top) / 4)));
+        const horizontal = right - left - 2 * radius;
+        const vertical = bottom - top - 2 * radius;
+        const perimeter = 2 * (horizontal + vertical) + 2 * Math.PI * radius;
+        const d = `M ${left + radius} ${top} H ${right - radius} ` +
           `Q ${right} ${top} ${right} ${top + radius} V ${bottom - radius} ` +
           `Q ${right} ${bottom} ${right - radius} ${bottom} H ${left + radius} ` +
           `Q ${left} ${bottom} ${left} ${bottom - radius} V ${top + radius} ` +
           `Q ${left} ${top} ${left + radius} ${top} Z`;
-        layer.style.setProperty('--wb-promo-path', `path("${path}")`);
-        layer.style.setProperty('--wb-orbit-duration',
-          `${Math.max(80, Math.round((2 * (right - left + bottom - top)) / 22))}s`);
+        path.setAttribute('d', d);
+        svg.setAttribute('viewBox', `${left} ${top} ${right - left} ${bottom - top}`);
+        textPath.setAttribute('textLength', String(Math.round(perimeter * 2)));
+        motion.setAttribute('to', String(Math.round(-perimeter)));
+        motion.setAttribute('dur', `${Math.max(80, Math.round(perimeter / 20))}s`);
       }
     };
   }
@@ -1315,41 +1395,37 @@
         position:absolute;inset:0;z-index:1;overflow:visible;pointer-events:none;
       }
       #wb-promotion[hidden]{display:none!important}
+      #wb-promotion .wb-promo-svg{
+        position:absolute;inset:0;width:100%;height:100%;overflow:visible;
+        color:#40536d;pointer-events:none;
+      }
       #wb-promotion .wb-promo-link{
-        position:absolute;top:0;left:0;box-sizing:border-box;width:max-content;
-        margin:0;padding:3px;border:0;background:none;color:#40536d;
-        font:11px/14px "PingFang SC",Arial,sans-serif;letter-spacing:0;
-        text-decoration:none;white-space:nowrap;cursor:pointer;pointer-events:auto;
-        offset-path:var(--wb-promo-path,none);offset-anchor:50% 50%;offset-rotate:0deg;
-        offset-distance:var(--wb-orbit-start);
-        animation:wb-promo-orbit var(--wb-orbit-duration,100s) linear infinite;
+        color:inherit;pointer-events:visiblePainted;cursor:pointer;text-decoration:none;
       }
-      #wb-promotion .wb-promo-link span{
-        display:block;transform:scale(1);transition:transform .16s ease,color .16s ease;
-        background:rgba(255,255,255,.92);border-radius:2px;
+      #wb-promotion .wb-promo-text{
+        paint-order:stroke;stroke:rgba(255,255,255,.92);stroke-width:4px;
+        transition:font-size .16s ease,fill .16s ease;
       }
-      #wb-promotion .wb-promo-link:hover,
-      #wb-promotion .wb-promo-link:focus-visible{z-index:2}
-      #wb-promotion .wb-promo-link:hover span,
-      #wb-promotion .wb-promo-link:focus-visible span{
-        transform:scale(1.45);color:#1557b0;text-decoration:underline;text-underline-offset:3px;
+      #wb-promotion .wb-promo-link:hover .wb-promo-text,
+      #wb-promotion .wb-promo-link:focus-visible .wb-promo-text{
+        font-size:13px;fill:#1557b0;
       }
-      #wb-promotion.is-paused .wb-promo-link,
-      #wb-promotion[hidden] .wb-promo-link{animation-play-state:paused}
       #wb-promotion .wb-promo-link:focus-visible{outline:2px solid #005eff;outline-offset:3px}
-      #wb-promotion[data-compact="true"] .wb-promo-link{
-        display:none;offset-path:none;animation:none;
+      #wb-promotion .wb-promo-compact{
+        display:none;position:absolute;left:50%;top:100%;margin-top:6px;
+        transform:translateX(-50%);box-sizing:border-box;max-width:calc(100vw - 26px);
+        padding:2px 5px;background:rgba(255,255,255,.94);border-radius:3px;
+        color:#40536d;font:11px/14px "PingFang SC",Arial,sans-serif;
+        white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-decoration:none;
+        pointer-events:auto;cursor:pointer;
       }
-      #wb-promotion[data-compact="true"] .wb-promo-link:first-child{
-        display:block;left:50%;top:100%;margin-top:6px;transform:translateX(-50%);
-      }
-      @keyframes wb-promo-orbit{
-        from{offset-distance:var(--wb-orbit-start)}
-        to{offset-distance:var(--wb-orbit-end)}
-      }
+      #wb-promotion .wb-promo-compact:hover,
+      #wb-promotion .wb-promo-compact:focus-visible{color:#1557b0;text-decoration:underline}
+      #wb-promotion[data-compact="true"] .wb-promo-svg{display:none}
+      #wb-promotion[data-compact="true"] .wb-promo-compact{display:block}
       @media(prefers-reduced-motion:reduce){
-        #wb-promotion .wb-promo-link{animation:none!important}
-        #wb-promotion .wb-promo-link span{transition:none}
+        #wb-promotion .wb-promo-motion{display:none}
+        #wb-promotion .wb-promo-text{transition:none}
       }
       #wb-study-ui .hd{
         flex:0 0 auto;
@@ -1660,6 +1736,7 @@
       assistantButton.setAttribute('aria-label', expanded ? '课程学习助手已展开' : '展开课程学习助手');
       assistantButton.title = expanded ? '课程学习助手已展开' : '展开课程学习助手';
       updateTaskControls();
+      promotion?.syncVisibility?.(expanded);
       if (expanded) applyPanelPosition(position.left, position.top);
     }
 
