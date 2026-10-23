@@ -445,6 +445,91 @@ test('折叠章节需要正常点击展开，延迟加载的媒体纳入总数',
   } finally { f.dom.window.close(); }
 });
 
+test('Beeline 章节统计识别 section-content 条目并忽略隐藏的响应式目录副本', async () => {
+  const f = fixture([]);
+  try {
+    const doc = f.window.document;
+    Object.defineProperty(f.window.HTMLElement.prototype, 'innerText', {
+      configurable: true,
+      get() { return this.textContent; },
+      set(value) { this.textContent = value; }
+    });
+    const oldRoot = doc.querySelector('.sub-menu-area');
+    const visibleRoot = doc.createElement('ul');
+    visibleRoot.className = 'el-menu el-menu--vertical el-menu-class';
+    visibleRoot.getClientRects = () => [{ width: 338, height: 947 }];
+    oldRoot.replaceWith(visibleRoot);
+
+    const section = (title, duration, status = 'unStart') => `
+      <li class="el-menu-item-group">
+        <div class="el-menu-item-group__title">
+          <div class="section-area">
+            <div class="section-content">
+              <span class="section-icon-type"><i class="video-icon"></i></span>
+              <span class="section-title"><span class="title">${title}</span></span>
+            </div><div class="duration-wrap"><div class="video-duration">${duration}</div></div>
+            <div class="section-status"><i class="${status}-icon"></i></div>
+          </div>
+        </div><ul></ul>
+      </li>`;
+    const addChapter = (title, content, expanded) => {
+      const area = doc.createElement('div');
+      area.className = 'sub-menu-area';
+      area.innerHTML = `<li class="el-sub-menu${expanded ? ' is-opened' : ''}" aria-expanded="${expanded}">
+        <div class="el-sub-menu__title">${title}</div>
+        <ul class="el-menu el-menu--inline">${content}</ul>
+      </li>`;
+      visibleRoot.append(area);
+      return area.querySelector('li.el-sub-menu');
+    };
+
+    addChapter('第一章', section('第一节视频', '10 分 00 秒', 'done'), true);
+    const secondChapter = addChapter('第二章', '', false);
+    let visibleExpansionClicks = 0;
+    secondChapter.querySelector('.el-sub-menu__title').addEventListener('click', () => {
+      visibleExpansionClicks += 1;
+      secondChapter.setAttribute('aria-expanded', 'true');
+      secondChapter.classList.add('is-opened');
+      secondChapter.querySelector(':scope > ul').innerHTML = section('第二节视频', '12 分 00 秒');
+    });
+
+    const hiddenRoot = doc.createElement('ul');
+    hiddenRoot.className = 'el-menu el-menu--vertical el-menu-class';
+    hiddenRoot.style.display = 'none';
+    hiddenRoot.innerHTML = `<li class="el-sub-menu chapter-class" aria-expanded="false">
+      <div class="el-sub-menu__title">隐藏响应式副本</div>
+      <ul class="el-menu el-menu--inline">
+        <li class="el-sub-menu section-class" aria-expanded="false">
+          <div class="el-sub-menu__title">隐藏小节</div><ul></ul>
+        </li>
+      </ul>
+    </li>`;
+    let hiddenExpansionClicks = 0;
+    hiddenRoot.querySelector('.el-sub-menu__title')
+      .addEventListener('click', () => { hiddenExpansionClicks += 1; });
+    doc.body.append(hiddenRoot);
+
+    assert.equal(doc.querySelectorAll('li.el-menu-item').length, 0);
+    assert.equal(f.api.getMenuItems().length, 1,
+      'The section row is recognized before its chapter-load guard runs');
+    f.api.state.running = true;
+    const directory = await f.api.waitForDirectory(f.api.state.epoch);
+    assert.equal(visibleExpansionClicks, 1);
+    assert.equal(hiddenExpansionClicks, 0, 'The hidden responsive menu is outside the active directory tree');
+    assert.deepEqual(Array.from(directory.videoItems, item => item.querySelector('.title').textContent), [
+      '第一节视频', '第二节视频'
+    ]);
+    assert.deepEqual(Array.from(f.api.getDirectorySnapshot(directory.videoItems).items,
+      item => item.durationSeconds), [
+      600, 720
+    ], 'Duration text is read from the row container beside section-content');
+    assert.equal(f.api.getMenuItems().length, 2);
+    assert.equal(f.api.knownChaptersHaveItems(), true);
+    assert.equal(directory.pendingItems.length, 1, 'Sibling completion markers are read from section-area');
+    assert.equal(f.media.paused, true);
+  } finally { f.dom.window.close(); }
+});
+
 test('同一章节的同名媒体不会被去重丢失', () => {
   const f = fixture([mediaItem('同名视频'), mediaItem('同名视频')]);
   try {
