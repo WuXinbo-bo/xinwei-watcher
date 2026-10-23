@@ -123,7 +123,8 @@
   const PROMOTION_CONFIG = {
     enabled: true,
     brand: '创世の鑫元',
-    services: ['AI API 中转服务', 'GPT 会员代充值'],
+    tagline: '让灵感接入 AI',
+    services: ['AI API 中转', 'GPT 会员代充值'],
     url: 'https://88cf.scxai.top/'
   };
 
@@ -1210,6 +1211,80 @@
     return getPlaybackTarget();
   }
 
+  function createPromotion(panel) {
+    if (!PROMOTION_CONFIG.enabled) return null;
+    const layer = document.createElement('div');
+    layer.id = 'wb-promotion';
+    layer.hidden = getRoute() === 'other' || !state.panelExpanded;
+    layer.setAttribute('role', 'group');
+    layer.setAttribute('aria-label', `${PROMOTION_CONFIG.brand} 独立商业服务，非课程平台服务`);
+    const words = [PROMOTION_CONFIG.brand, PROMOTION_CONFIG.tagline, ...PROMOTION_CONFIG.services];
+    for (const [index, text] of words.entries()) {
+      const link = document.createElement('a');
+      link.className = 'wb-promo-link';
+      link.href = PROMOTION_CONFIG.url;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer sponsored';
+      link.title = `${PROMOTION_CONFIG.brand} · ${text}（外部商业服务，新标签页打开）`;
+      link.setAttribute('aria-label', link.title);
+      link.style.setProperty('--wb-orbit-start', `${index * 100 / words.length}%`);
+      link.style.setProperty('--wb-orbit-end', `${100 + index * 100 / words.length}%`);
+      const label = document.createElement('span');
+      label.textContent = text;
+      link.appendChild(label);
+      layer.appendChild(link);
+    }
+    panel.appendChild(layer);
+    let hovered = false;
+    const syncPause = () => layer.classList.toggle('is-paused',
+      hovered || layer.contains(document.activeElement));
+    layer.addEventListener('pointerover', event => {
+      if (event.target.closest('a')) {
+        hovered = true;
+        syncPause();
+      }
+    });
+    layer.addEventListener('pointerout', event => {
+      if (!layer.contains(event.relatedTarget)) {
+        hovered = false;
+        syncPause();
+      }
+    });
+    layer.addEventListener('focusin', syncPause);
+    layer.addEventListener('focusout', event => {
+      layer.classList.toggle('is-paused', hovered || layer.contains(event.relatedTarget));
+    });
+
+    let extent = 140;
+    let compact = false;
+    return {
+      constraints(viewport) {
+        // Reserve the enlarged word's full width at the side rails, not just its center.
+        const widths = [...layer.querySelectorAll('span')].map(label => label.offsetWidth);
+        if (Math.max(...widths) > 0) extent = Math.ceil(Math.max(...widths) * 1.45 + 18);
+        compact = viewport.width < 342 + extent * 2 || viewport.height < 180;
+        layer.dataset.compact = String(compact);
+        panel.style.setProperty('--wb-shell-height', compact ? '56px' : '64px');
+        return compact ? { x: 13, top: 8, bottom: 48 } : { x: extent, top: 32, bottom: 32 };
+      },
+      layout({ width, height }) {
+        if (compact || !width || !height) return;
+        const side = extent / 2 + 3;
+        const left = -side, right = width + side, top = -16, bottom = height + 16;
+        const radius = 18;
+        // One closed clockwise rounded rectangle, shared by every upright word.
+        const path = `M ${left + radius} ${top} H ${right - radius} ` +
+          `Q ${right} ${top} ${right} ${top + radius} V ${bottom - radius} ` +
+          `Q ${right} ${bottom} ${right - radius} ${bottom} H ${left + radius} ` +
+          `Q ${left} ${bottom} ${left} ${bottom - radius} V ${top + radius} ` +
+          `Q ${left} ${top} ${left + radius} ${top} Z`;
+        layer.style.setProperty('--wb-promo-path', `path("${path}")`);
+        layer.style.setProperty('--wb-orbit-duration',
+          `${Math.max(80, Math.round((2 * (right - left + bottom - top)) / 22))}s`);
+      }
+    };
+  }
+
   function injectUI() {
     if (document.getElementById('wb-study-ui')) return;
 
@@ -1218,7 +1293,7 @@
       #wb-study-ui{
         position:fixed;right:18px;top:90px;width:340px;z-index:999999;
         max-width:calc(min(100vw,var(--wb-visible-width,100vw)) - 32px);
-        max-height:calc(var(--wb-visible-height,100vh) - 28px);
+        max-height:calc(var(--wb-visible-height,100vh) - var(--wb-shell-height,28px));
         display:flex;flex-direction:column;
         isolation:isolate;overflow:visible;
         background:#fff;border:1px solid #e6e6e6;border-radius:12px;
@@ -1237,61 +1312,44 @@
       #wb-assistant-button:active{cursor:grabbing}
       #wb-assistant-button:focus-visible{outline:2px solid #005eff;outline-offset:3px}
       #wb-promotion{
-        position:absolute;inset:-12px;z-index:-1;overflow:visible;
-        color:#40536d;font:10px/1 "PingFang SC",Arial,sans-serif;pointer-events:none;
+        position:absolute;inset:0;z-index:1;overflow:visible;pointer-events:none;
       }
       #wb-promotion[hidden]{display:none!important}
-      #wb-promotion .wb-promo-edge{
-        position:absolute;overflow:hidden;color:#40536d;opacity:.88;
-        font:10px/12px "PingFang SC",Arial,sans-serif;white-space:nowrap;
-        pointer-events:none;
-      }
-      #wb-promotion .wb-promo-top{
-        top:0;left:14px;right:138px;height:12px;
-        border-radius:6px 0 0 0;
-      }
-      #wb-promotion .wb-promo-right{
-        top:14px;right:0;bottom:14px;width:12px;
-      }
-      #wb-promotion .wb-promo-bottom{
-        right:14px;bottom:0;left:14px;height:12px;
-        border-radius:0 0 6px 6px;
-      }
-      #wb-promotion .wb-promo-left{
-        top:14px;bottom:14px;left:0;width:12px;
-      }
-      #wb-promotion .wb-promo-run{
-        display:flex;width:max-content;height:100%;will-change:transform;
-      }
-      #wb-promotion .wb-promo-copy{
-        display:block;flex:none;padding-right:24px;white-space:nowrap;
-      }
-      #wb-promotion .wb-promo-top .wb-promo-run{animation:wb-promo-left 52s linear infinite}
-      #wb-promotion .wb-promo-bottom .wb-promo-run{animation:wb-promo-right 52s linear infinite}
-      #wb-promotion .wb-promo-right .wb-promo-run,
-      #wb-promotion .wb-promo-left .wb-promo-run{
-        display:flex;flex-direction:column;width:12px;height:max-content;
-      }
-      #wb-promotion .wb-promo-right .wb-promo-run{animation:wb-promo-down 58s linear infinite}
-      #wb-promotion .wb-promo-left .wb-promo-run{animation:wb-promo-up 58s linear infinite}
-      #wb-promotion .wb-promo-right .wb-promo-copy,
-      #wb-promotion .wb-promo-left .wb-promo-copy{
-        writing-mode:vertical-rl;text-orientation:mixed;padding:0 0 24px;
-      }
       #wb-promotion .wb-promo-link{
-        position:absolute;top:0;right:0;box-sizing:border-box;width:130px;height:12px;
-        display:flex;align-items:center;justify-content:center;overflow:hidden;
-        background:rgba(255,255,255,.96);color:#1557b0;font:700 10px/12px "PingFang SC",Arial,sans-serif;
-        text-decoration:underline;text-underline-offset:2px;white-space:nowrap;
-        pointer-events:auto;
+        position:absolute;top:0;left:0;box-sizing:border-box;width:max-content;
+        margin:0;padding:3px;border:0;background:none;color:#40536d;
+        font:11px/14px "PingFang SC",Arial,sans-serif;letter-spacing:0;
+        text-decoration:none;white-space:nowrap;cursor:pointer;pointer-events:auto;
+        offset-path:var(--wb-promo-path,none);offset-anchor:50% 50%;offset-rotate:0deg;
+        offset-distance:var(--wb-orbit-start);
+        animation:wb-promo-orbit var(--wb-orbit-duration,100s) linear infinite;
       }
-      #wb-promotion .wb-promo-link:focus-visible{outline:2px solid #005eff;outline-offset:1px}
-      @keyframes wb-promo-left{to{transform:translateX(-50%)}}
-      @keyframes wb-promo-right{from{transform:translateX(-50%)}to{transform:translateX(0)}}
-      @keyframes wb-promo-down{from{transform:translateY(-50%)}to{transform:translateY(0)}}
-      @keyframes wb-promo-up{to{transform:translateY(-50%)}}
+      #wb-promotion .wb-promo-link span{
+        display:block;transform:scale(1);transition:transform .16s ease,color .16s ease;
+        background:rgba(255,255,255,.92);border-radius:2px;
+      }
+      #wb-promotion .wb-promo-link:hover,
+      #wb-promotion .wb-promo-link:focus-visible{z-index:2}
+      #wb-promotion .wb-promo-link:hover span,
+      #wb-promotion .wb-promo-link:focus-visible span{
+        transform:scale(1.45);color:#1557b0;text-decoration:underline;text-underline-offset:3px;
+      }
+      #wb-promotion.is-paused .wb-promo-link,
+      #wb-promotion[hidden] .wb-promo-link{animation-play-state:paused}
+      #wb-promotion .wb-promo-link:focus-visible{outline:2px solid #005eff;outline-offset:3px}
+      #wb-promotion[data-compact="true"] .wb-promo-link{
+        display:none;offset-path:none;animation:none;
+      }
+      #wb-promotion[data-compact="true"] .wb-promo-link:first-child{
+        display:block;left:50%;top:100%;margin-top:6px;transform:translateX(-50%);
+      }
+      @keyframes wb-promo-orbit{
+        from{offset-distance:var(--wb-orbit-start)}
+        to{offset-distance:var(--wb-orbit-end)}
+      }
       @media(prefers-reduced-motion:reduce){
-        #wb-promotion .wb-promo-run{animation:none!important;will-change:auto}
+        #wb-promotion .wb-promo-link{animation:none!important}
+        #wb-promotion .wb-promo-link span{transition:none}
       }
       #wb-study-ui .hd{
         flex:0 0 auto;
@@ -1461,46 +1519,7 @@
       </div>
     `;
     document.body.appendChild(box);
-    if (PROMOTION_CONFIG.enabled) {
-      const promo = document.createElement('div');
-      promo.id = 'wb-promotion';
-      promo.hidden = getRoute() === 'other' || !state.panelExpanded;
-
-      const promoCopy = [
-        `推广 · ${PROMOTION_CONFIG.brand}`,
-        ...PROMOTION_CONFIG.services,
-        'GPT / Claude / API 服务',
-        `了解更多 · ${new URL(PROMOTION_CONFIG.url).host}`
-      ].join('　·　');
-      for (const side of ['top', 'right', 'bottom', 'left']) {
-        const edge = document.createElement('div');
-        edge.className = `wb-promo-edge wb-promo-${side}`;
-        edge.setAttribute('aria-hidden', 'true');
-        const run = document.createElement('div');
-        run.className = 'wb-promo-run';
-        for (let copyIndex = 0; copyIndex < 2; copyIndex += 1) {
-          const copy = document.createElement('span');
-          copy.className = 'wb-promo-copy';
-          copy.textContent = promoCopy;
-          run.appendChild(copy);
-        }
-        edge.appendChild(run);
-        promo.appendChild(edge);
-      }
-
-      const promoLink = document.createElement('a');
-      promoLink.className = 'wb-promo-link';
-      promoLink.href = PROMOTION_CONFIG.url;
-      promoLink.target = '_blank';
-      promoLink.rel = 'noopener noreferrer';
-      promoLink.textContent = '推广 · 了解更多 ↗';
-      promoLink.setAttribute(
-        'aria-label',
-        `推广：${PROMOTION_CONFIG.brand}，${PROMOTION_CONFIG.services.join('、')}，了解更多`
-      );
-      promo.appendChild(promoLink);
-      box.appendChild(promo);
-    }
+    const promotion = createPromotion(box);
     const assistantButton = document.createElement('button');
     assistantButton.id = 'wb-assistant-button';
     assistantButton.type = 'button';
@@ -1573,10 +1592,11 @@
 
     function keepBoxInViewport(left, top, width, height, margin = 8) {
       const viewport = getVisibleViewport();
-      const minLeft = viewport.left + margin;
-      const minTop = viewport.top + margin;
-      const maxLeft = Math.max(minLeft, viewport.left + viewport.width - width - margin);
-      const maxTop = Math.max(minTop, viewport.top + viewport.height - height - margin);
+      const inset = typeof margin === 'number' ? { x: margin, top: margin, bottom: margin } : margin;
+      const minLeft = viewport.left + inset.x;
+      const minTop = viewport.top + inset.top;
+      const maxLeft = Math.max(minLeft, viewport.left + viewport.width - width - inset.x);
+      const maxTop = Math.max(minTop, viewport.top + viewport.height - height - inset.bottom);
       return {
         left: Math.min(Math.max(minLeft, left), maxLeft),
         top: Math.min(Math.max(minTop, top), maxTop)
@@ -1594,13 +1614,14 @@
 
     function applyPanelPosition(left, top) {
       const viewport = getVisibleViewport();
+      const margins = promotion?.constraints(viewport) || 8;
       const size = getElementSize(box, { width: 342, height: Math.max(0, viewport.height - 26) });
-      const position = keepBoxInViewport(left, top, size.width, size.height,
-        PROMOTION_CONFIG.enabled ? 13 : 8);
+      const position = keepBoxInViewport(left, top, size.width, size.height, margins);
       box.style.left = `${position.left}px`;
       box.style.top = `${position.top}px`;
       box.style.right = 'auto';
       state.uiPosition = position;
+      promotion?.layout(size);
 
       const buttonSize = getElementSize(assistantButton, { width: 56, height: 56 });
       const buttonPosition = keepBoxInViewport(
@@ -1621,8 +1642,8 @@
       assistantButton.style.top = `${position.top}px`;
       assistantButton.style.right = 'auto';
       const panelSize = getElementSize(box, { width: 342, height: 0 });
-      const margin = PROMOTION_CONFIG.enabled ? 13 : 8;
       const viewport = getVisibleViewport();
+      const margin = promotion?.constraints(viewport)?.x || 8;
       const panelLeft = position.left + buttonSize.width - panelSize.width;
       state.uiPosition = {
         left: Math.min(Math.max(viewport.left + margin, panelLeft),
@@ -1726,6 +1747,16 @@
     window.addEventListener('resize', repositionWithinVisibleViewport);
     window.visualViewport?.addEventListener('resize', scheduleViewportReposition);
     window.visualViewport?.addEventListener('scroll', scheduleViewportReposition);
+    if (promotion && typeof window.ResizeObserver === 'function') {
+      let lastSize = '';
+      new window.ResizeObserver(() => {
+        if (box.hidden) return;
+        const size = `${box.offsetWidth}:${box.offsetHeight}`;
+        if (size === lastSize) return;
+        lastSize = size;
+        scheduleViewportReposition();
+      }).observe(box);
+    }
 
     box.querySelector('#wb-min').addEventListener('click', () => setPanelExpanded(false));
 

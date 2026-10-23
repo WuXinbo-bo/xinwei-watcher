@@ -24,7 +24,7 @@
 
 ## 播放目标和任务行为
 
-- 悬浮球图片位于扩展本地资源 `assets/floating-assistant.png`；推广层可在 `content.js` 的 `PROMOTION_CONFIG.enabled` 中关闭。
+- 悬浮球图片位于扩展本地资源 `assets/floating-assistant.png`；环绕文字模块可在 `content.js` 的 `PROMOTION_CONFIG.enabled` 中关闭，不影响课程功能。
 - 播放目标可设为 80%–100%，默认 100%；设置会保存在扩展存储中并同步到已打开的课程页。
 - 达到目标后切换到下一项；每门课程的媒体首轮处理完成后，扩展会刷新页面并核对平台延迟更新的完成状态。
 - 播放、加载、目录更新或误触导航出现普通故障时，扩展会在保存的任务和资源范围内有界恢复。
