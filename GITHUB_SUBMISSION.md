@@ -8,12 +8,34 @@
 - 基线：`c92a3428b7fde0ebd47425a609dd7b5656b1822d`
 - 建议提交信息：`feat: add floating assistant and optional SVG edge promotion`
 - 建议 PR 标题：`1.1.0 candidate: 播放目标、课程核对与悬浮助手 UI`
+- 最终代码修正提交：`ec6b208`（单份推广文案完整绕行，不重复铺满轨道）
 
-## 本地提交前
+## 推送到自己的 Fork
 
-从本目录根部提交全部公开源码，保持 `.gitignore`、`docs/`、`tests/` 和 `LICENSE` 的位置不变。不要把 ZIP 文件本身作为仓库内唯一文件，也不要多套一层版本号目录。
+当前源码已经保存在本地 Git 分支中，无需重新初始化仓库或重复提交。确认位于本项目根目录后执行：
 
-在提交前执行：
+```sh
+git status --short --branch
+git remote -v
+git push -u origin feature/ui-floating-assistant-orbit
+```
+
+`origin` 应指向 `https://github.com/scxai-top/xinwei-watcher.git`。不要强制推送，不要覆盖 `main` 或既有的 `feature/playback-target-completion` 分支。
+
+推送成功后在 GitHub 创建 Pull Request，选择：
+
+- Base repository：`WuXinbo-bo/xinwei-watcher`
+- Base branch：`main`
+- Head repository：`scxai-top/xinwei-watcher`
+- Compare branch：`feature/ui-floating-assistant-orbit`
+
+PR 标题使用上方建议标题，正文使用下方 `PR 描述` 中的 Markdown 内容，不包含代码围栏本身。助手没有代为推送、创建 PR、Tag 或 Release。
+
+## 上传范围
+
+上传项目根部的全部公开源码，保持 `.gitignore`、`docs/`、`tests/`、`assets/` 和 `LICENSE` 的位置不变。源码 ZIP 是完整源码备份，不要把 ZIP 文件本身作为仓库内唯一文件，也不要多套一层版本号目录。
+
+需要重新验证时，在项目根目录执行：
 
 ```sh
 npm ci --ignore-scripts
@@ -35,14 +57,16 @@ npm test
 - 为异常资源增加有界重试和失败记录。
 - 保留暂停、恢复、任务持久化、首页扫描、课程选择、日志和错误处理。
 - 默认收起为本地图片悬浮球，可拖动、点击展开原有完整课程面板。
-- 增加独立可关闭的 SVG `textPath` 商业推广轨道，字形随矩形边缘及圆角转向。悬停放大、点击外链、返回后恢复动画；小视口与减少动态效果有兜底。
+- 增加独立可关闭的 SVG `textPath` 商业推广轨道。品牌、标语及两项服务各出现一次，组成单条文案沿圆角矩形完整绕行，其余轨道留空，字形随直边与圆角转向。
+- 保留文字悬停放大、主动点击外链、返回后恢复动画；小视口与减少动态效果有兜底。没有自动跳转、远程脚本或追踪。
 
 ### Validation
 
 - `npm run check`：通过，退出码 0；`content.js` 和 `background.js` 语法检查通过。
 - `npm test`：386/386 项通过，0 失败、0 取消、0 跳过。
 - `npm ci --ignore-scripts`：成功安装 39 个包；仅有一条依赖弃用警告，详见 `docs/VERIFICATION.md`。
-- 隔离 Edge `155.0.4283.62` 加载实际解压扩展，在本地 fixture 上验证图片、字形拐角、悬停、链接、返回恢复、窄视口和减少动态效果。未在该测试中启动真实课程任务。
+- 隔离 Edge `155.0.4283.62` 加载实际解压扩展，在本地 fixture 上验证图片、单份文案及空白轨道、完整绕行、字形拐角、悬停、链接、返回恢复、窄视口和减少动态效果。未在该测试中启动真实课程任务。
+- 在用户现有 Edge 中重载最新解压扩展并刷新真实课表页，确认展开原面板及单份文字移动；没有点击开始或重置。真实课程运行测试留待用户接手，不能视为已通过。
 - 此前 Edge 观察曾确认一次 80% 目标达到后平台计数增加并进入下一项；这不是整门课程的真实验收。
 
 ### Notes
