@@ -36,6 +36,7 @@
 - `npm ci --ignore-scripts` 成功；现有依赖有 `whatwg-encoding` 弃用警告。
 - `npm run check` 通过；386 项合成测试通过。UI 专项覆盖默认收起、展开/收起、拖动、任务不受影响、视口、返回恢复、减少动画及配置关闭。
 - 隔离 Microsoft Edge `155.0.4283.62` 实际加载扩展，本地 fixture 上的 SVG 排版、主动点击、动画恢复、本地图片、窄屏与减少动画均通过。
+- 用户现有 Edge 已重新加载当前扩展，在真实课表页确认拖动与点击区分、展开/收起、圆角文字转向、实际文字链接跳转及返回后继续移动。原目录控件可操作，未启动或重置课程任务；当前窗口未单独验证悬停，相关行为由隔离浏览器测试覆盖。
 - 有一次并行浏览器/完整套件高负载运行出现既有网关用例超时，关闭隔离浏览器后完整复跑通过；未修改业务测试等待时间。
 - 仍有既有的可选日志测试诊断 `location is not defined`，不影响测试退出状态。
 - 未承诺锁屏、浏览器休眠、旧版 Chromium、所有字体和平台缩放组合均验证。常规系统睡眠时动画暂停属于正常行为；唤醒后页面可见性事件恢复。
@@ -44,6 +45,8 @@
 ## Git 与发布
 
 可推送分支：`feature/ui-floating-assistant-orbit`，继承 Fork 业务分支及上游 `main` 历史。保留原 `work/ui-floating-assistant-promotion`，没有删除 `.git`、强推、Tag 或 Release。
+
+按用户最后决定，GitHub 推送和 PR 由用户自行操作，本轮不再代为提交远程更改。
 
 建议总体提交信息：`feat: add floating assistant and optional SVG edge promotion`。
 
