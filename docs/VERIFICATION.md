@@ -2,6 +2,16 @@
 
 本文件记录 2026-10-21 的候选版基线核验，以及 2026-10-22 至 23 日的悬浮 UI 改造验证（Asia/Taipei）。本地合成测试与真实浏览器观察分别列出。
 
+## 2026-10-24 逻辑与测试审查复跑
+
+- 工作区：`feature/ui-floating-assistant-orbit`，HEAD `a373081`；审查前工作区干净。
+- `npm run check`：成功，`content.js` 和 `background.js` 语法检查通过。
+- `npm test`：成功，`387` 项通过，`0` 失败、`0` 取消、`0` 跳过；耗时约 70.9 秒。
+- `git diff --check`：成功。
+- 测试索引静态校验：24 个测试文件、344 条源码 `test` 声明；参数化/循环声明在运行时展开为 387 个实际用例。
+- 本轮只新增审查文档，没有修改课程播放、恢复、目录识别或 UI 运行逻辑；没有重新启动真实课程任务，也没有把模拟测试当作真实平台验收。
+- 逻辑图、冲突审查、逐项测试索引和测试处置建议分别见 [`LOGIC-MAP.md`](LOGIC-MAP.md)、[`CONFLICT-AUDIT.md`](CONFLICT-AUDIT.md)、[`TEST-MAP.md`](TEST-MAP.md) 和 [`TEST-TRIAGE.md`](TEST-TRIAGE.md)。
+
 ## 2026-10-22 悬浮 UI 改造验证
 
 - `npm ci --ignore-scripts`：成功，安装 39 个包；有一条现有 `whatwg-encoding@3.1.1` 弃用警告。
