@@ -877,7 +877,7 @@
         }
         if (state.job?.running && state.job.ownerTabId === state.tabId &&
           state.job.ownerInstance === state.instanceId &&
-          ['entry-home', 'scan-home', 'home', 'opening', 'course'].includes(state.job.phase) && !state.jobPromise &&
+          ['entry-home', 'scan-home', 'home', 'course'].includes(state.job.phase) && !state.jobPromise &&
           !state.routeRecoveryPending) resumeSharedJob();
       } catch (error) {
         if (!(error instanceof TaskCancelled)) failLocally(error.message);
