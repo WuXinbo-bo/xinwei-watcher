@@ -415,7 +415,7 @@ test('资源播放记录按课程保存，同名资源不会污染下一课程',
   assert.equal(Object.keys(r.job.candidates[0].records).length, 0);
 });
 
-test('新标签打开超时不重复点击，也不宣称零课程完成', async () => {
+test('统计新标签未创建时最多重试两次，最终提示允许弹窗且不宣称零课程完成', async () => {
   const c = coordinator();
   const home = c.addTab(HOME);
   let r = await c.request(home, 'home', 'start');
@@ -430,6 +430,37 @@ test('新标签打开超时不重复点击，也不宣称零课程完成', async
   assert.equal(r.job.navigationRecovery.attempts, 1);
   assert.equal(r.job.workerTabId, null);
   assert.equal(c.navigation.length, 0);
+  assert.match(r.job.logs.at(-1).text, /30 秒后第 1 次重试/);
+  c.storage.session['xinwei-job-v3'].openDeadline = Date.now() - 1;
+  c.storage.session['xinwei-job-v3'].navigationRecovery.nextRetryAt = Date.now() - 1;
+  r = await c.request(home, 'home', 'get');
+  assert.equal(r.job.running, true);
+  assert.equal(r.job.navigationRecovery.attempts, 2);
+  assert.equal(r.job.workerTabId, null);
+  c.storage.session['xinwei-job-v3'].openDeadline = Date.now() - 1;
+  c.storage.session['xinwei-job-v3'].navigationRecovery.nextRetryAt = Date.now() - 1;
+  r = await c.request(home, 'home', 'get');
+  assert.equal(r.job.running, false);
+  assert.equal(r.job.phase, 'manual');
+  assert.match(r.job.reason, /允许本站弹出窗口或新标签页/);
+});
+
+test('统计标签曾创建后被用户关闭，不计入弹窗拦截重试', async () => {
+  const c = coordinator();
+  const home = c.addTab(HOME);
+  let r = await c.request(home, 'home', 'start');
+  r = await c.request(home, 'home', 'scan-result', {
+    ...auth(r.job), candidates: [{ title: '课程', key: '课程::班级', status: 'uninspected' }]
+  });
+  r = await c.request(home, 'home', 'open', { ...auth(r.job), index: 0, purpose: 'inspect' });
+  const worker = c.addTab(learnUrl('course', 'class'), home);
+  await new Promise(resolve => setImmediate(resolve));
+  await c.closeTab(worker);
+  r = await c.request(home, 'home', 'get');
+  assert.equal(r.job.running, false);
+  assert.equal(r.job.phase, 'manual');
+  assert.match(r.job.reason, /任务页面已关闭/);
+  assert.doesNotMatch(r.job.reason, /弹出窗口|新标签页/);
 });
 
 test('学习页运行时刷新首页，返回后由新首页实例继续选课', async () => {

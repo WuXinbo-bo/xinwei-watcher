@@ -88,6 +88,7 @@
     resourceCheckpoint: null,
     homePageTransition: null,
     routeRecoveryPending: false,
+    openRetryToken: '',
     mediaLoadingHold: null,
     localMediaStop: null,
     startPending: false,
@@ -577,6 +578,7 @@
     state.resourceCheckpoint = null;
     state.homePageTransition = null;
     state.routeRecoveryPending = false;
+    state.openRetryToken = '';
     state.mediaLoadingHold = null;
     state.localMediaStop = null;
     state.manualNotice = '';
@@ -834,6 +836,14 @@
         if (resetSequence !== state.resetSequence || state.resetPending) return;
         const job = state.job;
         if (!job?.running) return;
+        if (job.phase === 'opening' && job.targetPurpose === 'inspect' &&
+          job.workerTabId == null && job.ownerTabId === state.tabId &&
+          job.ownerInstance === state.instanceId && job.openRecovery?.token &&
+          state.openRetryToken !== job.openRecovery.token) {
+          state.openRetryToken = job.openRecovery.token;
+          resumeSharedJob();
+          return;
+        }
         if (job.phase === 'course' && job.targetPurpose === 'play' &&
           job.ownerTabId === state.tabId && job.ownerInstance === state.instanceId) {
           const candidate = currentCandidate();
@@ -867,7 +877,7 @@
         }
         if (state.job?.running && state.job.ownerTabId === state.tabId &&
           state.job.ownerInstance === state.instanceId &&
-          ['entry-home', 'scan-home', 'home', 'course'].includes(state.job.phase) && !state.jobPromise &&
+          ['entry-home', 'scan-home', 'home', 'opening', 'course'].includes(state.job.phase) && !state.jobPromise &&
           !state.routeRecoveryPending) resumeSharedJob();
       } catch (error) {
         if (!(error instanceof TaskCancelled)) failLocally(error.message);
@@ -2633,6 +2643,22 @@
     // No repeated clicks: the background accepts only this newly opened task tab.
   }
 
+  async function runInspectionOpenRetry(epoch) {
+    const job = state.job;
+    if (getRoute() !== 'home' || job?.phase !== 'opening' || job.targetPurpose !== 'inspect') return;
+    const candidate = job.candidates?.[job.targetIndex];
+    if (!candidate) throw new Error('课程选择失效，请重新扫描');
+    setCurrentTask('正在重试打开课程统计页');
+    const entry = await findHomeCandidate(candidate, epoch);
+    await humanClick(entry, epoch, () => {
+      if (getRoute() !== 'home') throw new RecoverableError('课表页面已变化，稍后重新识别', 'home-loading');
+      const current = getHomeCourseCards().some(card =>
+        getHomeCourseCandidate(card, candidate.page, 0)?.key === candidate.key);
+      if (!current) throw new RecoverableError('课程入口正在更新，稍后重新识别', 'home-loading');
+    });
+    setCurrentTask('等待课程页面打开');
+  }
+
   async function runCurrentCourseJob(epoch) {
     const job = state.job;
     const candidate = job.candidates[job.targetIndex];
@@ -2711,6 +2737,8 @@
       try {
         if (getRoute() === 'agent' && state.job.phase === 'entry-home') await runAgentEntryJob(epoch);
         else if (getRoute() === 'home' && ['scan-home', 'home'].includes(state.job.phase)) await runHomeJob(epoch);
+        else if (getRoute() === 'home' && state.job.phase === 'opening' &&
+          state.job.targetPurpose === 'inspect') await runInspectionOpenRetry(epoch);
         else if (getRoute() === 'learn' && state.job.phase === 'course') await runCurrentCourseJob(epoch);
         else throw new Error('当前页面与自动任务不符，请核对后继续');
       } catch (error) {
@@ -3262,7 +3290,7 @@
     } finally {
       before?.removeEventListener('loadedmetadata', onMetadata);
     }
-    if (!ready) throw new RecoverableError('音视频未能打开或播放器尚未就绪', 'loading');
+    if (!ready) throw new RecoverableError('网络缓慢或播放器尚未就绪，建议人工检查', 'loading');
     if (currentCourseKey() !== courseKey) {
       throw new RecoverableError('打开资源时页面已离开当前课程，正在返回原课程', 'navigation');
     }

@@ -414,7 +414,7 @@ test('未确认登录或跨站重定向保持阻断，导航恢复不强行拉�
   }
 });
 
-test('统计新标签尚未出现只低频等待，不重复点击或声明完成', async () => {
+test('统计新标签未创建时最多重试两次，最终提示允许弹窗且不宣称零课程完成', async () => {
   const c = harness();
   c.tabs.get(1).url = HOME;
   let r = await c.request('start');
@@ -428,7 +428,18 @@ test('统计新标签尚未出现只低频等待，不重复点击或声明完�
   assert.equal(r.job.phase, 'opening');
   assert.equal(r.job.workerTabId, null);
   assert.equal(c.navigation.length, 0);
-  assert.match(r.job.logs.at(-1).text, /弹窗/);
+  assert.match(r.job.logs.at(-1).text, /30 秒后第 1 次重试/);
+  c.storage.session[KEY].openDeadline = Date.now() - 1;
+  c.storage.session[KEY].navigationRecovery.nextRetryAt = Date.now() - 1;
+  r = await c.request('get');
+  assert.equal(r.job.running, true);
+  assert.equal(r.job.navigationRecovery.attempts, 2);
+  c.storage.session[KEY].openDeadline = Date.now() - 1;
+  c.storage.session[KEY].navigationRecovery.nextRetryAt = Date.now() - 1;
+  r = await c.request('get');
+  assert.equal(r.job.running, false);
+  assert.equal(r.job.phase, 'manual');
+  assert.match(r.job.reason, /允许本站弹出窗口或新标签页/);
 });
 
 test('任意站内开始的已观察出发页导航失败可重试，实际首页仍需新文档hello', async () => {

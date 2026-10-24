@@ -552,7 +552,10 @@ test('切换目录条目后，旧播放器的 ended 不得冒充新资源已播�
     });
     f.api.CFG.mediaLoadTimeout = 5;
     f.api.state.running = true;
-    await assert.rejects(f.api.playItemToEnd(next, f.api.state.epoch, f.api.currentCourseKey()), /未能打开/);
+    await assert.rejects(
+      f.api.playItemToEnd(next, f.api.state.epoch, f.api.currentCourseKey()),
+      /网络缓慢或播放器尚未就绪，建议人工检查/
+    );
     assert.equal(f.api.state.playedCount, 0);
     assert.equal(f.api.state.processedItems.has(f.api.getItemKey(next)), false);
   } finally { f.dom.window.close(); }
