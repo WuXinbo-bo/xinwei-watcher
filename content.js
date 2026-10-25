@@ -88,6 +88,7 @@
     resourceCheckpoint: null,
     homePageTransition: null,
     routeRecoveryPending: false,
+    openRetryToken: '',
     mediaLoadingHold: null,
     localMediaStop: null,
     startPending: false,
@@ -577,6 +578,7 @@
     state.resourceCheckpoint = null;
     state.homePageTransition = null;
     state.routeRecoveryPending = false;
+    state.openRetryToken = '';
     state.mediaLoadingHold = null;
     state.localMediaStop = null;
     state.manualNotice = '';
@@ -834,6 +836,14 @@
         if (resetSequence !== state.resetSequence || state.resetPending) return;
         const job = state.job;
         if (!job?.running) return;
+        if (job.phase === 'opening' && job.targetPurpose === 'inspect' &&
+          job.workerTabId == null && job.ownerTabId === state.tabId &&
+          job.ownerInstance === state.instanceId && job.openRecovery?.token &&
+          state.openRetryToken !== job.openRecovery.token) {
+          state.openRetryToken = job.openRecovery.token;
+          resumeSharedJob();
+          return;
+        }
         if (job.phase === 'course' && job.targetPurpose === 'play' &&
           job.ownerTabId === state.tabId && job.ownerInstance === state.instanceId) {
           const candidate = currentCandidate();
@@ -1922,7 +1932,8 @@
     box.querySelector('#wb-reset').addEventListener('click', resetPlugin);
   }
 
-  function getMenuItems() {
+  function getMenuItems(root = null) {
+    root ||= getRoute() === 'learn' ? findDirectoryRoot() || document : document;
     const seen = new Set();
     const items = [];
 
@@ -1936,13 +1947,13 @@
       items.push(itemEl);
     };
 
-    getStructuredMediaItems().forEach(addItem);
+    getStructuredMediaItems(root).forEach(addItem);
 
     SELECTORS.menuItems.forEach(selector => {
-      document.querySelectorAll(selector).forEach(addItem);
+      root.querySelectorAll(selector).forEach(addItem);
     });
 
-    inferMediaItemsFromDirectory().forEach(addItem);
+    inferMediaItemsFromDirectory(root).forEach(addItem);
 
     return items.filter(isLikelyCourseItem);
   }
@@ -2052,6 +2063,8 @@
 
   function getStatusHost(el) {
     if (!el) return document.createElement('div');
+    const sectionArea = el.closest('.section-area');
+    if (sectionArea?.querySelector('.section-content')) return sectionArea;
     return el.closest('.section-item, .section-content, li.el-menu-item, .el-menu-item, .courseware-list-item, .section-area') || el.parentElement || el;
   }
 
@@ -2061,14 +2074,15 @@
     return /([0-9]{1,2}\s*[:：]\s*[0-9]{2})|([0-9]{1,2}\s*分\s*[0-9]{1,2}\s*秒)/.test(text);
   }
 
-  function inferMediaItemsFromDirectory() {
-    const root = findDirectoryRoot();
+  function inferMediaItemsFromDirectory(root = findDirectoryRoot()) {
     if (!root) return [];
 
     const nodes = root.querySelectorAll('div, li, button, a');
     const items = [];
 
     nodes.forEach(node => {
+      const sectionArea = node.closest('.section-area');
+      if (sectionArea?.querySelector('.section-content')) return;
       if (!hasMediaDuration(node)) return;
       const text = (node.innerText || '').replace(/\s+/g, ' ').trim();
       if (!text || text.length > 160) return;
@@ -2092,7 +2106,18 @@
   }
 
   function findDirectoryRoot() {
-    return document.querySelector([
+    const menuRoots = [...document.querySelectorAll('ul.el-menu.el-menu--vertical.el-menu-class')];
+    const visibleMenuRoots = menuRoots.filter(isVisibleElement);
+    if (visibleMenuRoots.length) {
+      return visibleMenuRoots.sort((a, b) => {
+        const countItems = root => root.querySelectorAll(
+          'li.el-menu-item, .section-content, .section-item, .courseware-list-item'
+        ).length;
+        return countItems(b) - countItems(a);
+      })[0];
+    }
+    if (menuRoots.length) return menuRoots[0];
+    const selectors = [
       '.sub-menu-area',
       'li.el-sub-menu.is-opened > ul.el-menu.el-menu--inline',
       'ul.el-menu.el-menu--inline',
@@ -2101,19 +2126,21 @@
       '[class*="catalog"]',
       '[class*="course-chapter"]',
       '[class*="courseware"]'
-    ].join(', '));
+    ].join(', ');
+    const roots = [...document.querySelectorAll(selectors)];
+    return roots.find(isVisibleElement) || roots[0] || null;
   }
 
-  function getStructuredMediaItems() {
+  function getStructuredMediaItems(root = document) {
     const items = [];
 
-    document.querySelectorAll('li.el-menu-item-group').forEach(group => {
+    root.querySelectorAll('li.el-menu-item-group').forEach(group => {
       group.querySelectorAll(':scope > ul > li.el-menu-item[role="menuitem"], :scope > ul > li.el-menu-item').forEach(item => {
         items.push(item);
       });
     });
 
-    document.querySelectorAll('li.el-sub-menu.is-opened > ul.el-menu.el-menu--inline > li.el-menu-item[role="menuitem"], li.el-sub-menu.is-opened > ul.el-menu.el-menu--inline > li.el-menu-item').forEach(item => {
+    root.querySelectorAll('li.el-sub-menu.is-opened > ul.el-menu.el-menu--inline > li.el-menu-item[role="menuitem"], li.el-sub-menu.is-opened > ul.el-menu.el-menu--inline > li.el-menu-item').forEach(item => {
       items.push(item);
     });
 
@@ -2289,7 +2316,8 @@
 
   function getDurationSeconds(el) {
     if (!el) return Number.NaN;
-    const text = (el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim();
+    const host = getStatusHost(el);
+    const text = (host.innerText || host.textContent || '').replace(/\s+/g, ' ').trim();
     const cached = state.durationCache.get(el);
     if (cached?.text === text) return cached.seconds;
     let seconds = Number.NaN;
@@ -2359,9 +2387,11 @@
     });
   }
 
-  function knownChaptersHaveItems() {
-    return [...document.querySelectorAll('li.el-sub-menu')]
-      .every(chapter => chapter.querySelector('li.el-menu-item'));
+  function knownChaptersHaveItems(root = findDirectoryRoot()) {
+    if (!root) return false;
+    const items = getMenuItems(root);
+    return [...root.querySelectorAll('li.el-sub-menu')]
+      .every(chapter => items.some(item => chapter.contains(item)));
   }
 
   async function saveDirectoryCheckpoint(snapshot, epoch) {
@@ -2613,6 +2643,22 @@
     // No repeated clicks: the background accepts only this newly opened task tab.
   }
 
+  async function runInspectionOpenRetry(epoch) {
+    const job = state.job;
+    if (getRoute() !== 'home' || job?.phase !== 'opening' || job.targetPurpose !== 'inspect') return;
+    const candidate = job.candidates?.[job.targetIndex];
+    if (!candidate) throw new Error('课程选择失效，请重新扫描');
+    setCurrentTask('正在重试打开课程统计页');
+    const entry = await findHomeCandidate(candidate, epoch);
+    await humanClick(entry, epoch, () => {
+      if (getRoute() !== 'home') throw new RecoverableError('课表页面已变化，稍后重新识别', 'home-loading');
+      const current = getHomeCourseCards().some(card =>
+        getHomeCourseCandidate(card, candidate.page, 0)?.key === candidate.key);
+      if (!current) throw new RecoverableError('课程入口正在更新，稍后重新识别', 'home-loading');
+    });
+    setCurrentTask('等待课程页面打开');
+  }
+
   async function runCurrentCourseJob(epoch) {
     const job = state.job;
     const candidate = job.candidates[job.targetIndex];
@@ -2691,6 +2737,8 @@
       try {
         if (getRoute() === 'agent' && state.job.phase === 'entry-home') await runAgentEntryJob(epoch);
         else if (getRoute() === 'home' && ['scan-home', 'home'].includes(state.job.phase)) await runHomeJob(epoch);
+        else if (getRoute() === 'home' && state.job.phase === 'opening' &&
+          state.job.targetPurpose === 'inspect') await runInspectionOpenRetry(epoch);
         else if (getRoute() === 'learn' && state.job.phase === 'course') await runCurrentCourseJob(epoch);
         else throw new Error('当前页面与自动任务不符，请核对后继续');
       } catch (error) {
@@ -3108,17 +3156,22 @@
       await taskWait(randomDelay(CFG.afterExpandDelayMin, CFG.afterExpandDelayMax), epoch);
     }
     // Expand each known chapter normally. A stable partial list is not enough.
-    const ready = await waitUntil(() => findDirectoryRoot() && !pageLoading() &&
-      (getMenuItems().length || document.querySelector('li.el-sub-menu')), CFG.directoryLoadTimeout, epoch);
+    const ready = await waitUntil(() => {
+      const root = findDirectoryRoot();
+      return root && !pageLoading() &&
+        (getMenuItems(root).length || root.querySelector('li.el-sub-menu'));
+    }, CFG.directoryLoadTimeout, epoch);
     if (!ready) throw new RecoverableError('课程目录尚未加载，正在等待重新识别', 'directory-load');
+    const root = findDirectoryRoot();
     const saved = savedDirectory();
-    if (saved && knownChaptersHaveItems() &&
-      directorySignature(getDirectorySnapshot()) === directorySignature(saved)) {
+    if (saved && knownChaptersHaveItems(root) &&
+      directorySignature(getDirectorySnapshot(getMenuItems(root))) === directorySignature(saved)) {
       let stableSince = Date.now();
       const reused = await waitUntil(() => {
-        if (pageLoading() || !findDirectoryRoot()) { stableSince = Date.now(); return false; }
-        const snapshot = getDirectorySnapshot();
-        if (!knownChaptersHaveItems() ||
+        const currentRoot = findDirectoryRoot();
+        if (pageLoading() || !currentRoot) { stableSince = Date.now(); return false; }
+        const snapshot = getDirectorySnapshot(getMenuItems(currentRoot));
+        if (!knownChaptersHaveItems(currentRoot) ||
           directorySignature(snapshot) !== directorySignature(saved)) return 'changed';
         return Date.now() - stableSince >= CFG.directoryStableTime && snapshot;
       }, CFG.directoryLoadTimeout, epoch);
@@ -3131,7 +3184,8 @@
     const expanded = new WeakSet();
     while (true) {
       assertRunning(epoch);
-      const chapter = [...document.querySelectorAll('li.el-sub-menu')]
+      const currentRoot = findDirectoryRoot();
+      const chapter = [...(currentRoot?.querySelectorAll('li.el-sub-menu') || [])]
         .find(el => !expanded.has(el));
       if (!chapter) break;
       expanded.add(chapter);
@@ -3143,7 +3197,7 @@
         if (!open) throw new RecoverableError('章节暂未展开', 'directory-load');
         await taskWait(randomDelay(CFG.afterExpandDelayMin, CFG.afterExpandDelayMax), epoch);
       }
-      const chapterReady = await waitUntil(() => !chapter.isConnected || chapter.querySelector('li.el-menu-item'),
+      const chapterReady = await waitUntil(() => !chapter.isConnected || getMenuItems(chapter).length,
         CFG.directoryLoadTimeout, epoch);
       if (!chapterReady || !chapter.isConnected) throw new RecoverableError('章节条目尚未加载完成', 'directory-load');
     }
@@ -3151,8 +3205,9 @@
     let firstStableAt = 0;
     const loaded = await waitUntil(() => {
       if (pageLoading()) { signature = ''; return false; }
-      const items = getMenuItems();
-      if (!findDirectoryRoot() || !items.length) { signature = ''; return false; }
+      const currentRoot = findDirectoryRoot();
+      const items = currentRoot && getMenuItems(currentRoot);
+      if (!currentRoot || !items.length) { signature = ''; return false; }
       const snapshot = getDirectorySnapshot(items);
       // A refresh cannot turn missing or changed saved resources into a
       // smaller, supposedly complete course. Wait for the whole directory.
@@ -3235,7 +3290,7 @@
     } finally {
       before?.removeEventListener('loadedmetadata', onMetadata);
     }
-    if (!ready) throw new RecoverableError('音视频未能打开或播放器尚未就绪', 'loading');
+    if (!ready) throw new RecoverableError('网络缓慢或播放器尚未就绪，建议人工检查', 'loading');
     if (currentCourseKey() !== courseKey) {
       throw new RecoverableError('打开资源时页面已离开当前课程，正在返回原课程', 'navigation');
     }
@@ -4633,7 +4688,7 @@
     getReportTiming, gatewayFailureForPause, getPlaybackBlockingDialog, trustedPlayerInput,
     getHomeCourseCandidate, scanHomeCourses, runHomeJob, runAgentEntryJob, getAgentTimetableEntry, jobCommand,
     acceptJob, syncSharedJob, chooseLowestRemaining, waitForDirectory, runCurrentCourseJob,
-    getDirectorySnapshot, directorySignature, playItemWithRecovery, reacquireResource,
+    getDirectorySnapshot, directorySignature, knownChaptersHaveItems, playItemWithRecovery, reacquireResource,
     resourceRecovery, nextCourseRetryAt, RecoverableError, DeferredResource,
     playSinglePassItem, runSinglePassCourse
   };

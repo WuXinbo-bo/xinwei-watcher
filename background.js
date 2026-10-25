@@ -29,6 +29,8 @@
     job.logs = [...(job.logs || []), { time, text, type, id }].slice(-300);
   };
   const taskTabIds = job => [job.homeTabId, job.workerTabId, job.returningTabId].filter(Number.isInteger);
+  const INSPECTION_OPEN_RETRY_LIMIT = 2;
+  const INSPECTION_OPEN_RETRY_DELAY = 30000;
   const isStartCancellation = (job, msg, tabId) => msg.action === 'pause' &&
     !isRetiredInstance(job, tabId, msg.instanceId) &&
     job.startRequest?.tabId === tabId && job.startRequest.instanceId === msg.instanceId &&
@@ -771,11 +773,31 @@
       } else if (page === 'home') destination = expected;
       else return save(pause(job, '课程跳转进入了未确认页面，已保留任务；请检查登录或平台提示。', true));
     } else {
-      // Inspection can open a new tab asynchronously. Reclicking here could
-      // produce two workers, so preserve its single opening and poll slowly.
-      notice = job.workerTabId == null
-        ? '正在等待课程统计页打开；若浏览器拦截新标签，请检查弹窗提示'
-        : '正在等待课程统计页加载并确认课程身份';
+      // Only a never-created inspection tab is a popup-blocking case. A tab
+      // that existed and was later closed is handled by tabs.onRemoved.
+      if (job.workerTabId == null) {
+        if (page !== 'home') {
+          return save(pause(job, '课程统计页打开前首页已离开本站，已保留任务；请回到课表后继续。', true));
+        }
+        const recovery = job.openRecovery?.key === key ? job.openRecovery : { attempts: 0 };
+        if (recovery.attempts < INSPECTION_OPEN_RETRY_LIMIT) {
+          const attempts = recovery.attempts + 1;
+          const nextRetryAt = Date.now() + INSPECTION_OPEN_RETRY_DELAY;
+          job.openRecovery = {
+            key, attempts, nextRetryAt,
+            token: `${job.runId}:${job.targetIndex}:${attempts}:${Date.now()}`
+          };
+          job.navigationRecovery = { key, attempts, nextRetryAt };
+          job.openDeadline = nextRetryAt;
+          addLog(job, `课程统计页尚未打开，${INSPECTION_OPEN_RETRY_DELAY / 1000} 秒后第 ${attempts} 次重试`);
+          await save(job);
+          return job;
+        }
+        return save(pause(job,
+          '课程统计页未能打开；请允许本站弹出窗口或新标签页后，点击“继续”重试。',
+          true));
+      }
+      notice = '正在等待课程统计页加载并确认课程身份';
       if (job.workerTabId != null && page !== 'learn') {
         return save(pause(job, '课程统计页进入了未确认页面，请检查登录或平台提示。', true));
       }
@@ -1212,6 +1234,7 @@
         bindOwnerInstance(job, tabId, msg.instanceId);
         job.phase = 'course';
         delete job.navigationRecovery;
+        delete job.openRecovery;
         changed = true;
         addLog(job, `已打开课程：${candidate.title}；${job.targetPurpose === 'inspect' ? '统计音视频，不启动播放' : '开始正常播放'}`);
       } else if (tabId === job.ownerTabId && job.phase === 'course') {
@@ -1331,7 +1354,21 @@
             job.phase = 'opening';
             job.ownerTabId = job.homeTabId;
           } else if (job.workerTabId != null) job.phase = 'opening';
-          else { job.phase = 'home'; job.ownerTabId = job.homeTabId; job.targetIndex = null; }
+          else if (job.targetPurpose === 'inspect') {
+            job.phase = 'opening';
+            job.ownerTabId = job.homeTabId;
+            job.openDeadline = Date.now() + 45000;
+            job.openRecovery = {
+              key: `openDeadline:${job.targetIndex ?? ''}:`,
+              attempts: Number(job.openRecovery?.attempts) || 0,
+              nextRetryAt: Date.now(),
+              token: `${job.runId}:${job.targetIndex}:continue:${Date.now()}`
+            };
+          } else {
+            job.phase = 'home';
+            job.ownerTabId = job.homeTabId;
+            job.targetIndex = null;
+          }
         } else job.phase = resume;
         await chrome.tabs.get(job.ownerTabId); // closed task tab needs a fresh scan
         if (job.phase === 'course') {
@@ -1482,6 +1519,7 @@
       job.targetPurpose = msg.purpose;
       job.phase = 'opening';
       delete job.navigationRecovery;
+      delete job.openRecovery;
       job.openDeadline = Date.now() + 45000;
       job.workerTabId = msg.purpose === 'play' ? job.homeTabId : null;
       bindOwnerInstance(job, job.ownerTabId, msg.purpose === 'play' ? null : msg.instanceId);
