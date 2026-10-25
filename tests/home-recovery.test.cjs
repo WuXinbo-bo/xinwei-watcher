@@ -17,6 +17,101 @@ async function stopFixture(f) {
   f.dom.window.close();
 }
 
+async function blockedInspection() {
+  const c = coordinator();
+  const id = c.addTab(HOME);
+  const f = homeFixture([homeCard('弹窗测试课程')], { connect: c.connect(id) });
+  const doc = f.window.document;
+  doc.querySelector('.btn-next').disabled = true;
+  let clicks = 0;
+  const entry = doc.querySelector('.item-bg-text p.sle');
+  entry.addEventListener('click', () => { clicks += 1; });
+  const expire = () => {
+    const job = c.storage.session[KEY];
+    job.openDeadline = Date.now() - 1;
+    if (job.navigationRecovery) job.navigationRecovery.nextRetryAt = Date.now() - 1;
+  };
+  return { c, id, f, doc, entry, expire, clicks: () => clicks };
+}
+
+test('统计弹窗被拦截时实际点击两次重试，耗尽后提示授权，点击继续可再次打开', async () => {
+  const { c, id, f, doc, entry, expire, clicks } = await blockedInspection();
+  try {
+    doc.getElementById('wb-start').click();
+    await waitFor(() => clicks() === 1 && !f.api.state.jobPromise);
+    const runId = c.storage.session[KEY].runId;
+    for (let attempt = 1; attempt <= 2; attempt += 1) {
+      expire();
+      await f.api.syncSharedJob();
+      await waitFor(() => clicks() === attempt + 1 && !f.api.state.jobPromise);
+      assert.equal(c.storage.session[KEY].openRecovery.attempts, attempt);
+      await f.api.syncSharedJob();
+      assert.equal(clicks(), attempt + 1, 'Polling must not replay a consumed retry');
+    }
+    expire();
+    await f.api.syncSharedJob();
+    assert.equal(clicks(), 3);
+    assert.equal(f.api.state.job.phase, 'manual');
+    assert.match(doc.getElementById('wb-manual-list').textContent, /允许本站弹出窗口或新标签页/);
+    let worker;
+    entry.addEventListener('click', () => {
+      worker = c.addTab('https://www.beeline-ai.com/student/#/courseInfo/learn/courseWare/popup/video/resource?classId=class', id);
+    }, { once: true });
+    doc.getElementById('wb-start').click();
+    await waitFor(() => worker && c.storage.session[KEY].workerTabId === worker);
+    assert.equal(clicks(), 4);
+    assert.equal(c.storage.session[KEY].runId, runId);
+    const result = await c.request(worker, 'popup-worker', 'hello', { title: '弹窗测试课程' });
+    assert.equal(result.ok, true, result.error);
+    assert.equal(result.job.phase, 'course');
+    assert.equal(result.job.openRecovery, undefined);
+  } finally { await stopFixture(f); }
+});
+
+test('统计重试执行器忙时不丢失授权，空闲后只点击一次', async () => {
+  const { f, doc, expire, clicks } = await blockedInspection();
+  try {
+    doc.getElementById('wb-start').click();
+    await waitFor(() => clicks() === 1 && !f.api.state.jobPromise);
+    f.api.state.jobPromise = Promise.resolve();
+    expire();
+    await f.api.syncSharedJob();
+    assert.equal(clicks(), 1);
+    f.api.state.jobPromise = null;
+    await f.api.syncSharedJob();
+    await waitFor(() => clicks() === 2 && !f.api.state.jobPromise);
+    await f.api.syncSharedJob();
+    assert.equal(clicks(), 2);
+  } finally { await stopFixture(f); }
+});
+
+for (const cancel of ['pause', 'late-tab']) {
+  test(`统计重试手势期间${cancel === 'pause' ? '用户暂停' : '原标签迟到'}取消最终点击`, async () => {
+    const { c, id, f, doc, entry, expire, clicks } = await blockedInspection();
+    try {
+      doc.getElementById('wb-start').click();
+      await waitFor(() => clicks() === 1 && !f.api.state.jobPromise);
+      let cancelTask;
+      entry.addEventListener('mousedown', () => {
+        if (cancel === 'pause') cancelTask = f.api.stop();
+        else {
+          const worker = c.addTab('https://www.beeline-ai.com/student/#/courseInfo/learn/courseWare/popup/video/resource?classId=class', id);
+          cancelTask = c.request(id, f.api.state.instanceId, 'get').then(() => worker);
+        }
+      }, { once: true });
+      expire();
+      await f.api.syncSharedJob();
+      await waitFor(() => cancelTask && !f.api.state.jobPromise);
+      await cancelTask;
+      await f.api.syncSharedJob();
+      assert.equal(clicks(), 1);
+      const job = c.storage.session[KEY];
+      if (cancel === 'pause') assert.equal(job.running, false);
+      else assert.ok(Number.isInteger(job.workerTabId));
+    } finally { await stopFixture(f); }
+  });
+}
+
 for (const obstruction of ['empty', 'loading']) {
   test(`课表${obstruction === 'empty' ? '暂时为空' : '加载提示持续'}超时后保留同一任务，页面就绪自动恢复扫描`, async () => {
     const c = coordinator();

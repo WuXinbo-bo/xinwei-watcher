@@ -428,7 +428,7 @@ test('统计新标签未创建时最多重试两次，最终提示允许弹窗�
   assert.equal(r.job.phase, 'opening');
   assert.equal(r.job.workerTabId, null);
   assert.equal(c.navigation.length, 0);
-  assert.match(r.job.logs.at(-1).text, /30 秒后第 1 次重试/);
+  assert.match(r.job.logs.at(-1).text, /正在第 1 次重试；等待新页面最多 30 秒/);
   c.storage.session[KEY].openDeadline = Date.now() - 1;
   c.storage.session[KEY].navigationRecovery.nextRetryAt = Date.now() - 1;
   r = await c.request('get');

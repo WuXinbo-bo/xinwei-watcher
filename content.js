@@ -741,6 +741,7 @@
       state.resourceCheckpoint = null;
       state.homePageTransition = null;
       state.routeRecoveryPending = false;
+      state.openRetryToken = '';
       state.mediaLoadingHold = null;
       state.localMediaStop = null;
       renderLogEntries([], { reset: true });
@@ -840,7 +841,6 @@
           job.workerTabId == null && job.ownerTabId === state.tabId &&
           job.ownerInstance === state.instanceId && job.openRecovery?.token &&
           state.openRetryToken !== job.openRecovery.token) {
-          state.openRetryToken = job.openRecovery.token;
           resumeSharedJob();
           return;
         }
@@ -2720,14 +2720,20 @@
   }
 
   async function resumeSharedJob() {
+    const inspectionRetry = getRoute() === 'home' && state.job?.phase === 'opening' &&
+      state.job.targetPurpose === 'inspect' && state.job.workerTabId == null &&
+      state.job.openRecovery?.token && state.openRetryToken !== state.job.openRecovery.token;
     if (state.resetPending || state.startPending || state.pausePending || state.reloadPending || state.jobPromise || !state.job?.running || state.job.ownerTabId !== state.tabId ||
-      state.job.ownerInstance !== state.instanceId || !['entry-home', 'scan-home', 'home', 'course'].includes(state.job.phase)) return;
+      state.job.ownerInstance !== state.instanceId ||
+      (!['entry-home', 'scan-home', 'home', 'course'].includes(state.job.phase) && !inspectionRetry)) return;
     // An already-issued get can arrive while the explicit pause is being
     // saved. Only a newer authorized generation can resume this document.
     if (state.localMediaStop?.runId === state.job.runId) {
       if (state.job.generation <= state.localMediaStop.generation) return;
       state.localMediaStop = null;
     }
+    // Consume the retry only after an idle, authorized executor accepts it.
+    if (inspectionRetry) state.openRetryToken = state.job.openRecovery.token;
     const epoch = ++state.epoch;
     state.activeGeneration = state.job.generation;
     state.running = true;
@@ -4223,7 +4229,7 @@
 
     const failure = `播放异常，尝试三次仍无法播放：${lastReason}`;
     await saveSinglePassFailure(item, failure);
-    log(`播放异常，尝试多次仍无法播放：${title}`, 'err');
+    log(`播放异常，尝试多次仍无法播放：${title}；${lastReason}`, 'err');
     throw new DeferredResource(failure, 'player-error');
   }
 
@@ -4302,7 +4308,7 @@
           }
           pauseMedia('resource-failed');
           await saveSinglePassFailure(item, `首轮播放异常，待课程末核对：${error.message}`);
-          log(`首轮播放异常，先继续本门其他视频：${itemTitle(item)}`, 'err');
+          log(`首轮播放异常，先继续本门其他视频：${itemTitle(item)}；${error.message}`, 'err');
         }
       }
 

@@ -295,6 +295,29 @@ test('低于80的坏视频课程收尾最多重试三次后暂缓，不伪报完
   } finally { dispose(f); }
 });
 
+test('播放器因加载缓慢始终未出现时保留三次重试和暂缓，只在记录及日志建议人工检查', async () => {
+  const f = await sharedTargetFixture();
+  try {
+    f.media.remove();
+    await assert.rejects(
+      f.api.playSinglePassItem(f.item, f.api.state.epoch, f.api.currentCourseKey(), { phase: 'final' }),
+      error => error instanceof f.api.DeferredResource &&
+        /网络缓慢或播放器尚未就绪，建议人工检查/.test(error.message)
+    );
+    const job = f.c.storage.session[KEY];
+    const record = job.candidates[0].records[f.key];
+    assert.equal(record.finalAttempts, 3);
+    assert.equal(record.deferred, true);
+    assert.equal(record.ended, false);
+    assert.equal(record.confirmed, false);
+    assert.equal(job.running, true);
+    assert.equal(job.phase, 'course');
+    assert.match(record.error, /网络缓慢或播放器尚未就绪，建议人工检查/);
+    assert.match(f.api.state.logBox.textContent, /网络缓慢或播放器尚未就绪，建议人工检查/);
+    assert.equal(f.messages.filter(message => message.action === 'resource-retry' && message.phase === 'final').length, 3);
+  } finally { dispose(f); }
+});
+
 test('课程末重试清除旧待处理状态后才能保存新的播放观察', async () => {
   const f = await sharedTargetFixture();
   try {

@@ -789,12 +789,12 @@
           };
           job.navigationRecovery = { key, attempts, nextRetryAt };
           job.openDeadline = nextRetryAt;
-          addLog(job, `课程统计页尚未打开，${INSPECTION_OPEN_RETRY_DELAY / 1000} 秒后第 ${attempts} 次重试`);
+          addLog(job, `课程统计页尚未打开，正在第 ${attempts} 次重试；等待新页面最多 ${INSPECTION_OPEN_RETRY_DELAY / 1000} 秒`);
           await save(job);
           return job;
         }
         return save(pause(job,
-          '课程统计页未能打开；请允许本站弹出窗口或新标签页后，点击“继续”重试。',
+          '课程统计页未能打开；请检查地址栏拦截提示，允许本站弹出窗口或新标签页后点击“继续”；无拦截提示时请检查网络或课程入口。',
           true));
       }
       notice = '正在等待课程统计页加载并确认课程身份';

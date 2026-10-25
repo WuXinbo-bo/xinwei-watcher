@@ -1,6 +1,29 @@
 # Xinwei Course Watcher 运行逻辑图
 
-源码基准：分支 `feature/ui-floating-assistant-orbit`，提交 `a373081`。本图描述当前源码，不是目标设计图。业务代码入口主要在 `content.js` 和 `background.js`；测试索引见 [`TEST-MAP.md`](TEST-MAP.md)。
+原始图基准：分支 `feature/ui-floating-assistant-orbit`，提交 `a373081`（2026-10-24）。以下保留原图，并补充 2026-10-25 的统计页打开恢复分支。业务代码入口主要在 `content.js` 和 `background.js`；测试索引见 [`TEST-MAP.md`](TEST-MAP.md)。
+
+## 统计页未打开：有界重试（2026-10-25 补充）
+
+```mermaid
+flowchart TD
+  Click[初次点击课程统计入口] --> Wait[等待新标签与身份确认：初次 45 秒]
+  Wait --> Created{是否已经创建 worker 标签?}
+  Created -->|是| Bind[按原流程等待学习页并核验身份]
+  Created -->|否且到期| Budget{自动重试是否不足两次?}
+  Budget -->|是| Token[后台颁发新的重试 token]
+  Token --> Guard{首页执行器空闲且身份有效、未暂停?}
+  Guard -->|暂忙| Pending[保留 token 等待下次同步]
+  Pending --> Guard
+  Guard -->|是| Retry[消费 token；复查后点击一次入口]
+  Retry --> Again[等待最多 30 秒]
+  Again --> Created
+  Budget -->|否| Manual[停止自动点击；提示检查弹窗权限、网络或课程入口]
+  Manual -->|用户点击继续| Click
+  Bind --> Closed{用户关闭了已创建标签?}
+  Closed -->|是| Original[原有任务页面关闭暂停；不算弹窗拦截]
+```
+
+时间为逻辑期限；轮询、浏览器后台节流或休眠可能推迟实际检查。不能仅凭未出现新页断定浏览器拦截，因此提示也包含网络/入口检查。弱网播放器仍按原有资源重试和暂缓流程处理，只补充明确原因及人工检查建议。
 
 ## 总览
 
