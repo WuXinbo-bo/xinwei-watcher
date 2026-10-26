@@ -5,7 +5,9 @@
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
   }[c]));
   const icons = {
-    settings: '<path d="M4 7h10m4 0h2M4 17h2m4 0h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/>',
+    settings: '<path d="M9.17 5.16 L10.35 2.64 L13.65 2.64 L14.83 5.16 L14.83 5.16 L17.45 4.22 L19.78 6.55 L18.84 9.17 L18.84 9.17 L21.36 10.35 L21.36 13.65 L18.84 14.83 L18.84 14.83 L19.78 17.45 L17.45 19.78 L14.83 18.84 L14.83 18.84 L13.65 21.36 L10.35 21.36 L9.17 18.84 L9.17 18.84 L6.55 19.78 L4.22 17.45 L5.16 14.83 L5.16 14.83 L2.64 13.65 L2.64 10.35 L5.16 9.17 L5.16 9.17 L4.22 6.55 L6.55 4.22 L9.17 5.16Z"/><circle cx="12" cy="12" r="3.2"/>',
+    pause: '<path d="M9 5v14M15 5v14"/>',
+    play: '<path d="m8 5 11 7-11 7Z"/>',
     back: '<path d="m14 6-6 6 6 6"/>',
     video: '<rect x="3" y="5" width="18" height="14" rx="3"/><path d="m10 9 5 3-5 3Z"/>',
     audio: '<path d="M9 18V5l11-2v13M9 9l11-2"/><ellipse cx="6" cy="18" rx="3" ry="3"/><ellipse cx="17" cy="16" rx="3" ry="3"/>',
@@ -24,13 +26,18 @@
   function create({ getModel, imageUrl, promotion = {}, onReset, onLocate, onView, getShell, onRestoreShell }) {
     const box = document.createElement('section');
     box.id = 'wb-study-ui';
-    box.setAttribute('aria-label', '星卫课堂助手');
+    box.setAttribute('aria-label', '芯位教育课堂助手');
     box.innerHTML = `
       <header class="hd" id="wb-drag">
-        <div class="wb-brand"><img class="wb-brand-image" alt="" draggable="false"><span>星卫课堂助手</span></div>
-        <button class="wb-icon" type="button" data-ui-view="settings" aria-label="设置">${svg('settings')}</button>
-        <button class="wb-icon" id="wb-min" type="button" aria-label="收起星卫课堂助手">−</button>
+        <div class="wb-brand"><img class="wb-brand-image" alt="" draggable="false"><span>芯位教育课堂助手</span></div>
+        <button class="wb-icon" type="button" data-ui-view="settings" aria-label="设置" title="设置">${svg('settings')}</button>
+        <button class="wb-icon" id="wb-min" type="button" aria-label="收起芯位教育课堂助手">−</button>
       </header>
+      <aside class="wb-sponsor" id="wb-sponsor" aria-label="赞助支持" hidden>
+        <span class="wb-sponsor-label">赞助支持</span>
+        <a id="wb-sponsor-link" target="_blank" rel="noopener noreferrer sponsored"><span id="wb-sponsor-message"></span><span aria-hidden="true">↗</span></a>
+        <button class="wb-icon" id="wb-sponsor-toggle" type="button" aria-label="暂停赞助轮播" title="暂停赞助轮播" aria-pressed="false">${svg('pause')}</button>
+      </aside>
       <div class="bd" id="wb-body">
         <section class="wb-view" data-view="home">
           <div class="wb-status-line" id="wb-ui-status" role="status" aria-live="polite"></div>
@@ -90,6 +97,68 @@
     let contentSignature = '', scheduled = false, runId = null;
     const scroll = new Map(), chapters = new Map();
     let restore = null, storageKey = null, preferencesReady = false, viewRevision = 0;
+    const sponsor = $('wb-sponsor'), sponsorLink = $('wb-sponsor-link'), sponsorToggle = $('wb-sponsor-toggle');
+    const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)');
+    let sponsorItems = [], sponsorSignature = '', sponsorIndex = 0;
+    let sponsorTimer = null, sponsorFadeTimer = null, sponsorPaused = false, sponsorHover = false, sponsorFocus = false;
+    function sponsorData() {
+      if (!promotion.enabled || !String(promotion.brand || '').trim()) return null;
+      try {
+        const url = new URL(promotion.url);
+        if (url.protocol !== 'https:') return null;
+        const services = Array.isArray(promotion.services) ? promotion.services.filter(s => typeof s === 'string' && s.trim()) : [];
+        return { url: url.href, brand: String(promotion.brand), items: [...new Set(services.length ? services : [String(promotion.tagline || promotion.brand)])] };
+      } catch { return null; }
+    }
+    function stopSponsor() {
+      window.clearTimeout(sponsorTimer); window.clearTimeout(sponsorFadeTimer);
+      sponsorTimer = sponsorFadeTimer = null;
+      sponsor.classList.remove('wb-sponsor-fading');
+    }
+    function showSponsor(data) {
+      const label = `${data.brand} · ${sponsorItems[sponsorIndex]}`;
+      $('wb-sponsor-message').textContent = label;
+      sponsorLink.href = data.url;
+      sponsorLink.title = `第三方商业服务：${label}`;
+      sponsorLink.setAttribute('aria-label', `${label}，第三方商业服务，在新标签页打开`);
+    }
+    function syncSponsor() {
+      const data = sponsorData();
+      sponsor.hidden = !data;
+      if (!data) { stopSponsor(); sponsorSignature = ''; return; }
+      const signature = JSON.stringify(data);
+      if (signature !== sponsorSignature) {
+        stopSponsor(); sponsorSignature = signature; sponsorItems = data.items; sponsorIndex = 0; showSponsor(data);
+      }
+      sponsorToggle.hidden = sponsorItems.length < 2 || Boolean(reducedMotion?.matches);
+      const canRotate = sponsorItems.length > 1 && !reducedMotion?.matches && !sponsorPaused &&
+        !sponsorHover && !sponsorFocus && !document.hidden && !box.hidden && box.isConnected && view !== 'reset';
+      if (!canRotate) { stopSponsor(); return; }
+      if (sponsorTimer != null || sponsorFadeTimer != null) return;
+      sponsorTimer = window.setTimeout(() => {
+        sponsorTimer = null; sponsor.classList.add('wb-sponsor-fading');
+        sponsorFadeTimer = window.setTimeout(() => {
+          sponsorFadeTimer = null;
+          sponsorIndex = (sponsorIndex + 1) % sponsorItems.length;
+          showSponsor(data); sponsor.classList.remove('wb-sponsor-fading'); syncSponsor();
+        }, 140);
+      }, 7000);
+    }
+    sponsor.addEventListener('pointerenter', () => { sponsorHover = true; syncSponsor(); });
+    sponsor.addEventListener('pointerleave', () => { sponsorHover = false; syncSponsor(); });
+    sponsor.addEventListener('focusin', () => { sponsorFocus = true; syncSponsor(); });
+    sponsor.addEventListener('focusout', event => { sponsorFocus = sponsor.contains(event.relatedTarget); syncSponsor(); });
+    sponsorToggle.addEventListener('click', () => {
+      sponsorPaused = !sponsorPaused;
+      sponsorToggle.setAttribute('aria-pressed', String(sponsorPaused));
+      const label = sponsorPaused ? '继续赞助轮播' : '暂停赞助轮播';
+      sponsorToggle.setAttribute('aria-label', label); sponsorToggle.title = label;
+      sponsorToggle.innerHTML = svg(sponsorPaused ? 'play' : 'pause'); syncSponsor();
+    });
+    document.addEventListener('visibilitychange', syncSponsor);
+    reducedMotion?.addEventListener?.('change', syncSponsor);
+    window.addEventListener('pagehide', stopSponsor);
+    window.addEventListener('pageshow', syncSponsor);
     const text = (id, value) => { const el = $(id); const valueText = String(value ?? ''); if (el.textContent !== valueText) el.textContent = valueText; };
     const title = (label, parent = 'home', parentLabel = '任务首页') => `<button class="wb-link wb-back" type="button" data-ui-view="${parent}">${svg('back')}${parentLabel}</button><h2 class="wb-title">${esc(label)}</h2>`;
     const courseKey = course => course.courseKey || course.key;
@@ -170,11 +239,8 @@
     }
     function aboutPage() {
       let html = title('关于与服务', 'settings', '设置') + '<p class="wb-caption">Xinwei Course Watcher · 1.1.0 候选版本</p>' + note('面向 Beeline AI 学习页面。保留原作者署名与 Apache License 2.0。');
-      if (promotion.enabled) {
-        let url;
-        try { const parsed = new URL(promotion.url); if (parsed.protocol === 'https:') url = parsed.href; } catch {}
-        if (url) html += `<p class="wb-caption">第三方商业服务 · 非平台或原作者官方服务</p><a class="wb-external" href="${esc(url)}" target="_blank" rel="noopener noreferrer sponsored">${esc(promotion.brand)} · ${esc(promotion.services.join(' / '))} ↗</a>`;
-      }
+      const data = sponsorData();
+      if (data) html += `<p class="wb-caption">第三方商业服务 · 非平台或原作者官方服务</p><a class="wb-external" href="${esc(data.url)}" target="_blank" rel="noopener noreferrer sponsored">${esc(data.brand)} · ${esc(data.items.join(' / '))} ↗</a>`;
       return html;
     }
     function refreshPage() {
@@ -263,6 +329,7 @@
         runId = model.job?.runId;
       }
       box.dataset.view = view; box.dataset.tone = model.home.tone;
+      syncSponsor();
       for (const page of box.querySelectorAll('[data-view]')) page.hidden = page.dataset.view !== view;
       $('wb-ui-nav').hidden = view !== 'home'; $('wb-ui-task-strip').hidden = view === 'home';
       text('wb-ui-status', model.home.status); text('wb-ui-title', model.home.title); text('wb-ui-subtitle', model.home.subtitle);

@@ -25,7 +25,7 @@ test('home stays compact; logs and destructive controls require navigation', () 
     assert.equal(box.querySelector('[data-view=home]').hidden, false);
     for (const id of ['wb-log', 'wb-playback-target', 'wb-reset']) assert.equal(box.querySelector(`#${id}`).closest('[data-view]').hidden, true);
     assert.equal(box.querySelectorAll('[data-view=home] .primary:not([hidden])').length, 1);
-    assert.equal(box.querySelector('a'), null);
+    assert.equal(box.querySelector('#wb-sponsor-link').getAttribute('rel'), 'noopener noreferrer sponsored');
     ui.navigate('details'); box.querySelector('[data-ui-view=logs]').click();
     assert.equal(box.dataset.view, 'logs');
     box.dispatchEvent(new f.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));

@@ -714,7 +714,7 @@
     const model = state.uiController?.render();
     if (assistantButton && model) {
       assistantButton.dataset.tone = model.home.tone;
-      assistantButton.setAttribute('aria-label', `星卫课堂助手：${model.home.status}，点击展开`);
+      assistantButton.setAttribute('aria-label', `芯位教育课堂助手：${model.home.status}，点击展开`);
     }
   }
 
@@ -1391,9 +1391,9 @@
     const assistantButton = document.createElement('button');
     assistantButton.id = 'wb-assistant-button';
     assistantButton.type = 'button';
-    assistantButton.setAttribute('aria-label', '展开星卫课堂助手');
+    assistantButton.setAttribute('aria-label', '展开芯位教育课堂助手');
     assistantButton.setAttribute('aria-expanded', String(state.panelExpanded));
-    assistantButton.title = '展开星卫课堂助手';
+    assistantButton.title = '展开芯位教育课堂助手';
     assistantButton.hidden = getRoute() === 'other' || state.panelExpanded;
     const assistantImage = document.createElement('img');
     assistantImage.alt = '';
@@ -1524,8 +1524,8 @@
       const position = readPanelPosition();
       state.panelExpanded = expanded;
       assistantButton.setAttribute('aria-expanded', String(expanded));
-      assistantButton.setAttribute('aria-label', expanded ? '星卫课堂助手已展开' : '展开星卫课堂助手');
-      assistantButton.title = expanded ? '星卫课堂助手已展开' : '展开星卫课堂助手';
+      assistantButton.setAttribute('aria-label', expanded ? '芯位教育课堂助手已展开' : '展开芯位教育课堂助手');
+      assistantButton.title = expanded ? '芯位教育课堂助手已展开' : '展开芯位教育课堂助手';
       updateTaskControls();
       if (expanded) applyPanelPosition(position.left, position.top);
       controller.save();
@@ -4396,7 +4396,7 @@
       if (button && model) {
         const home = model.home;
         button.dataset.tone = home.tone;
-        button.setAttribute('aria-label', `星卫课堂助手：${home.status}，点击展开`);
+        button.setAttribute('aria-label', `芯位教育课堂助手：${home.status}，点击展开`);
       }
     }
   }, 1000);

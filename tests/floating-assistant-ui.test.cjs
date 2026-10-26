@@ -359,12 +359,13 @@ test('manifest exposes only the local avatar to the existing course-site origin'
   }]);
 });
 
-test('commercial services appear only after opening About, with an explicit safe link', () => {
+test('sponsor strip sits below the brand and About discloses its commercial identity', () => {
   const f = fixture([]);
   try {
     const box = f.window.document.getElementById('wb-study-ui');
     f.window.document.getElementById('wb-assistant-button').click();
-    assert.equal(box.querySelector('a'), null);
+    assert.equal(box.querySelector('#wb-sponsor').hidden, false);
+    assert.equal(box.querySelector('#wb-drag').nextElementSibling.id, 'wb-sponsor');
     assert.equal(box.querySelector('animate'), null);
     f.api.state.uiController.navigate('settings');
     box.querySelector('[data-ui-view="about"]').click();
@@ -376,7 +377,8 @@ test('commercial services appear only after opening About, with an explicit safe
     assert.equal(f.api.state.running, false);
     f.api.PROMOTION_CONFIG.enabled = false;
     f.api.updateTaskControls();
-    assert.equal(box.querySelector('a'), null);
+    assert.equal(box.querySelector('#wb-sponsor').hidden, true);
+    assert.equal(box.querySelector('.wb-external'), null);
     assert.equal(box.hidden, false);
   } finally { close(f); }
 });

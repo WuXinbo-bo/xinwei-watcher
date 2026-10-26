@@ -11,9 +11,18 @@
 #wb-study-ui .hd:active{cursor:grabbing}
 #wb-study-ui .wb-brand{display:flex;align-items:center;gap:8px;flex:1;min-width:0;font-size:14px;font-weight:600;letter-spacing:.02em}
 #wb-study-ui .wb-brand img{width:27px;height:27px;border-radius:7px;object-fit:cover;pointer-events:none}
+#wb-study-ui .wb-brand>span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #wb-study-ui .wb-icon{border:0;border-radius:7px;background:transparent;color:var(--wb-muted);width:28px;height:28px;padding:5px;display:grid;place-items:center;flex-shrink:0;transition:background .12s ease,color .12s ease}
 #wb-study-ui .wb-icon:hover{color:var(--wb-fg);background:var(--wb-soft)}
 #wb-study-ui .wb-icon svg{width:17px;height:17px;display:block}
+#wb-study-ui .wb-sponsor{display:flex;align-items:center;gap:8px;height:34px;flex:0 0 auto;padding:0 12px;border-bottom:1px solid var(--wb-border);font-size:12px;background:var(--wb-soft)}
+#wb-study-ui .wb-sponsor-label{flex-shrink:0;color:var(--wb-muted)}
+#wb-study-ui .wb-sponsor a{display:flex;align-items:center;gap:4px;flex:1;min-width:0;color:var(--wb-fg);text-decoration:none}
+#wb-study-ui .wb-sponsor a:hover{color:var(--wb-accent)}
+#wb-study-ui #wb-sponsor-message{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;transition:opacity .14s ease}
+#wb-study-ui .wb-sponsor-fading #wb-sponsor-message{opacity:0}
+#wb-study-ui .wb-sponsor .wb-icon{width:24px;height:24px;padding:4px;border-radius:5px}
+#wb-study-ui .wb-sponsor .wb-icon svg{width:13px;height:13px}
 #wb-study-ui .bd{min-height:0;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:var(--wb-border) transparent;padding:16px;user-select:text}
 #wb-study-ui .wb-view{min-width:0;overflow-wrap:anywhere}
 #wb-study-ui .wb-view.wb-enter{animation:wb-view-in .16s cubic-bezier(.2,0,0,1)}
@@ -94,3 +103,4 @@
 @media(prefers-color-scheme:dark){#wb-study-ui,#wb-assistant-button{--wb-bg:#222730;--wb-fg:#e8edf5;--wb-muted:#a1adbf;--wb-border:#38404d;--wb-soft:#2a313d;--wb-accent:#9bbaff;--wb-accent-soft:#303e59;--wb-warning:#f2c98b;--wb-warning-bg:#41362a;--wb-danger:#ffb0b7;--wb-success:#a2d5b7;color-scheme:dark}#wb-study-ui .btn.primary{color:#15233c}#wb-study-ui .btn.primary:hover:not(:disabled){background:#b6ccff}}
 @media(max-width:380px){#wb-study-ui .hd{padding:10px}#wb-study-ui .bd{padding:13px}#wb-study-ui .wb-brand{font-size:13px}}
 @media(pointer:coarse){#wb-study-ui .wb-icon{width:36px;height:36px}#wb-study-ui .btn,#wb-study-ui .wb-link,#wb-study-ui summary{min-height:44px}#wb-study-ui input{font-size:16px}}
+@media(pointer:coarse){#wb-study-ui .wb-sponsor{height:44px}#wb-study-ui .wb-sponsor .wb-icon{width:32px;height:32px}}

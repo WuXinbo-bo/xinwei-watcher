@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "minimum_chrome_version": "102",
-  "name": "Xinwei Course Watcher",
+  "name": "芯位教育课堂助手",
   "version": "1.1.0",
   "version_name": "1.1.0",
   "description": "Plays unfinished course videos and audio normally, with clear completion and pause controls.",
@@ -41,6 +41,6 @@
     }
   ],
   "action": {
-    "default_title": "Xinwei Course Watcher"
+    "default_title": "芯位教育课堂助手"
   }
 }
