@@ -11,6 +11,10 @@
     confirmationTimeout: 60000,
     stallTimeout: 90000,
     gatewayPauseGrace: 5000,
+    // A trusted player gesture immediately followed by pause is a user
+    // pause, not a transport failure. Keep a short window so an old click
+    // cannot classify a later network pause as manual intervention.
+    manualPauseWindow: 1500,
     gatewayRetryDelayMin: 8000,
     gatewayRetryDelayMax: 12000,
     gatewayRecoveryTimeout: 90000,
@@ -115,6 +119,8 @@
     pendingResetFromEpoch: null,
     resetMediaHold: false,
     durationCache: new WeakMap(),
+    scanPerformance: [],
+    homeValidation: null,
     playbackDiagnostics: {
       version: 1, startedAt: Date.now(), entry: null, takeover: null,
       handshake: [], guards: [], mediaEvents: [], pauses: [], directory: []
@@ -490,7 +496,7 @@
       } catch (error) {
         if (resetSequence !== state.resetSequence || stoppedBeforeRequest !== state.stopSequence) throw new TaskCancelled();
         const reconnectable = ['get', 'hello'].includes(action);
-        const checkpoint = ['record', 'resource-checkpoint', 'directory-checkpoint',
+        const checkpoint = ['record', 'record-completions', 'resource-checkpoint', 'directory-checkpoint',
           'media-observation', 'interruption-position', 'interruption-gap',
           'course-pass', 'resource-retry'].includes(action);
         if (attempt >= 2 || (!reconnectable && !checkpoint) || /context invalidated/i.test(error?.message || '')) {
@@ -543,6 +549,11 @@
     // membership and task-page checks depend on this value.
     state.tabId = response.tabId;
     if (!acceptJob(response.job)) throw new TaskCancelled();
+    // The first render may happen before the background handshake has
+    // supplied the tab id. Re-render once at that transition so tab-scoped
+    // view preferences (and the expanded shell state) load on a fresh
+    // document even when no task is active.
+    if (previousTabId !== state.tabId) state.uiController?.render();
     if (action !== 'get' && action !== 'reset' && requestResetEpoch !== state.resetEpoch) {
       throw new TaskCancelled();
     }
@@ -1393,7 +1404,7 @@
     const hasTaskState = running || state.startPending || state.pausePending || resetPending || state.storageFailed ||
       ['paused', 'manual', 'interrupted'].includes(job?.phase) || ['paused', 'manual'].includes(state.mode) || alerts.length > 0;
     return { job, tabId: state.tabId, courses, activeCourseKey, activeResourceKey, media, target: getPlaybackTarget(), home,
-      alerts, resetPending, overview, hasTaskState, logCount: state.logEntries.length,
+      alerts, resetPending, overview, hasTaskState, scanPerformance: state.scanPerformance.slice(-8), logCount: state.logEntries.length,
       targetReached: allRecords.filter(r => r.targetReached).length, confirmed: allRecords.filter(r => r.confirmed).length };
   }
 
@@ -1409,7 +1420,14 @@
       getShell: () => ({ expanded: state.panelExpanded, ...state.uiPosition }),
       onRestoreShell: shell => {
         if (Number.isFinite(shell.left) && Number.isFinite(shell.top)) state.uiPosition = { left: shell.left, top: shell.top };
-        setPanelExpanded(shell.expanded === true);
+        // Apply restored shell state without saving it back before the view
+        // snapshot itself has been restored.
+        state.panelExpanded = shell.expanded === true;
+        const button = document.getElementById('wb-assistant-button');
+        button?.setAttribute('aria-expanded', String(state.panelExpanded));
+        button?.setAttribute('aria-label', state.panelExpanded ? '芯位教育助手已展开' : '展开芯位教育助手');
+        if (button) button.title = state.panelExpanded ? '芯位教育助手已展开' : '展开芯位教育助手';
+        updateTaskControls();
         repositionWithinVisibleViewport();
       },
       onReset: () => resetPlugin({ confirmed: true }),
@@ -1707,7 +1725,59 @@
     controller.render();
   }
 
+  // Observe only the selected directory, excluding hidden duplicates and the UI.
+  // Drain queued mutations before synchronous reads as well as after delivery.
+  let directoryRead = null;
+  function directoryCache(root = findDirectoryRoot()) {
+    const routeKey = getRouteKey();
+    if (!root || !root.isConnected || getRoute() !== 'learn') {
+      directoryRead?.observer.disconnect();
+      directoryRead = null;
+      return null;
+    }
+    if (!directoryRead || directoryRead.root !== root || directoryRead.routeKey !== routeKey) {
+      directoryRead?.observer.disconnect();
+      const entry = { root, routeKey, items: null, snapshot: null, byKey: null };
+      entry.observer = new MutationObserver(() => { entry.items = entry.snapshot = entry.byKey = null; });
+      entry.observer.observe(root, { subtree: true, childList: true, attributes: true, characterData: true });
+      directoryRead = entry;
+    }
+    if (directoryRead.observer.takeRecords().length) {
+      directoryRead.items = directoryRead.snapshot = directoryRead.byKey = null;
+    }
+    return directoryRead;
+  }
+
+  function readDirectory() {
+    const cache = directoryCache();
+    if (!cache) return { items: [], snapshot: { version: 1, courseKey: currentCourseKey(), items: [] }, byKey: new Map() };
+    cache.items ||= collectMenuItems(cache.root);
+    cache.snapshot ||= buildDirectorySnapshot(cache.items);
+    cache.byKey ||= new Map(cache.items.map(item => [getItemKey(item), item]));
+    return cache;
+  }
+
+  async function measureScan(stage, operation) {
+    const startedAt = Date.now();
+    let ok = false;
+    try { const result = await operation(); ok = true; return result; }
+    finally {
+      state.scanPerformance.push({ stage, startedAt, durationMs: Date.now() - startedAt, ok });
+      if (state.scanPerformance.length > 24) state.scanPerformance.shift();
+    }
+  }
+
   function getMenuItems(root = null) {
+    const selected = getRoute() === 'learn' ? findDirectoryRoot() : null;
+    if (selected && (!root || root === selected)) {
+      const cache = directoryCache(selected);
+      cache.items ||= collectMenuItems(selected);
+      return cache.items.slice();
+    }
+    return collectMenuItems(root);
+  }
+
+  function collectMenuItems(root = null) {
     root ||= getRoute() === 'learn' ? findDirectoryRoot() || document : document;
     const seen = new Set();
     const items = [];
@@ -2116,7 +2186,11 @@
     return isVideoItem(item) ? 'media' : isDocumentItem(item) ? 'document' : 'other';
   }
 
-  function getDirectorySnapshot(items = getMenuItems()) {
+  function getDirectorySnapshot(items) {
+    return items ? buildDirectorySnapshot(items) : readDirectory().snapshot;
+  }
+
+  function buildDirectorySnapshot(items) {
     // Selector priority and expanded chapters can change discovery order.
     // The checkpoint always follows this document's actual directory order.
     const leaves = items.filter(isLeafCourseItem).sort((a, b) => {
@@ -2211,7 +2285,34 @@
       getComputedStyle(el).display !== 'none' && getComputedStyle(el).visibility !== 'hidden');
   }
 
+  let homeObserver = null;
+  function homeMutation(record) {
+    const selector = '.course-card-item, .el-pagination, .el-loading-mask';
+    const element = record.target.nodeType === 1 ? record.target : record.target.parentElement;
+    if (element?.closest(selector)) return true;
+    if (record.type === 'attributes' && element?.querySelector(selector)) return true;
+    return [...(record.addedNodes || []), ...(record.removedNodes || [])].some(node =>
+      node.nodeType === 1 && (node.matches(selector) || node.querySelector(selector)));
+  }
+
+  function observeHomeChanges() {
+    if (homeObserver) {
+      if (homeObserver.takeRecords().some(homeMutation)) state.homeValidation = null;
+      return;
+    }
+    homeObserver = new MutationObserver(records => { if (records.some(homeMutation)) state.homeValidation = null; });
+    homeObserver.observe(document.body, { subtree: true, childList: true, attributes: true, characterData: true });
+  }
+
   async function waitForHomeCards(epoch, previous = null, expectedPage = null) {
+    assertRunning(epoch);
+    observeHomeChanges();
+    const verified = state.homeValidation;
+    if (getRoute() === 'home' && !pageLoading() && verified && verified.runId === state.job?.runId &&
+      verified.page === getHomePageNumber() && verified.signature === homeCardsSignature() &&
+      verified.nodes.every(node => node.isConnected) &&
+      (expectedPage == null || verified.page === expectedPage) &&
+      (previous == null || verified.signature !== previous)) return;
     let signature = '', stableAt = 0;
     const result = await waitUntil(() => {
       if (getRoute() !== 'home') throw new Error('课表页面已改变，请核对页面');
@@ -2225,7 +2326,10 @@
       if (observed !== signature) { signature = observed; stableAt = Date.now(); return false; }
       return Date.now() - stableAt >= CFG.directoryStableTime;
     }, CFG.directoryLoadTimeout, epoch);
-    if (!result) throw new RecoverableError('课表课程列表尚未加载完成，稍后重新识别', 'home-loading');
+    if (!result) { state.homeValidation = null; throw new RecoverableError('课表课程列表尚未加载完成，稍后重新识别', 'home-loading'); }
+    homeObserver.takeRecords();
+    state.homeValidation = { runId: state.job?.runId, page: getHomePageNumber(),
+      signature: homeCardsSignature(), nodes: getHomeCourseCards() };
   }
 
   async function settleHomePageTransition(epoch) {
@@ -2286,6 +2390,10 @@
   }
 
   async function scanHomeCourses(epoch) {
+    return measureScan('home-overview', () => collectHomeCourses(epoch));
+  }
+
+  async function collectHomeCourses(epoch) {
     await goToHomePageNumber(1, epoch);
     const candidates = [], seen = new Set(), signatures = new Set();
     state.uiDiscoveredCourses = [];
@@ -2933,18 +3041,44 @@
       (event.type === 'keydown' && player.contains(document.activeElement))));
   }
 
+  function trustedPlayerPauseInput(event, media) {
+    if (!trustedPlayerInput(event, media)) return false;
+    if (event.type === 'keydown') return !media.paused && [' ', 'Space', 'Spacebar', 'k', 'K'].includes(event.key);
+    // A play control or media surface is only evidence of a pause while the
+    // resource was actually playing. The prominent big-play button while
+    // paused and unrelated player chrome must never suppress recovery.
+    if (media.paused || media.ended) return false;
+    const player = media.closest('.video-js, .audio-player, .player-wrapper');
+    const target = event.target;
+    if (target === media || target.matches?.('video, audio')) return true;
+    const control = target.closest?.(
+      '.vjs-play-control, .vjs-big-play-button, [data-action="play"], [data-action="pause"], ' +
+      '[aria-label*="播放"], [aria-label*="暂停"], [title*="播放"], [title*="暂停"], ' +
+      '[aria-label*="Play"], [aria-label*="Pause"], [title*="Play"], [title*="Pause"]'
+    );
+    return Boolean(control && player?.contains(control));
+  }
+
   async function waitForDirectory(epoch) {
+    return measureScan('course-directory', () => collectDirectory(epoch));
+  }
+
+  function directoryMotionFinished(element) {
+    return !(element.getAnimations?.({ subtree: true }) || []).some(animation =>
+      animation.playState === 'running' && Number.isFinite(animation.effect?.getComputedTiming().endTime));
+  }
+
+  async function collectDirectory(epoch) {
     observeDiagnostic('directory', { stage: 'before', media: observeCurrentMedia() });
     const sideButton = [...document.querySelectorAll('.sidebar-item')]
       .find(el => compactText(el.textContent) === '目录');
     if (sideButton && !findDirectoryRoot()?.getClientRects().length) {
       await humanClick(sideButton, epoch);
-      await taskWait(randomDelay(CFG.afterExpandDelayMin, CFG.afterExpandDelayMax), epoch);
     }
     // Expand each known chapter normally. A stable partial list is not enough.
     const ready = await waitUntil(() => {
       const root = findDirectoryRoot();
-      return root && !pageLoading() &&
+      return root && !pageLoading() && directoryMotionFinished(root) &&
         (getMenuItems(root).length || root.querySelector('li.el-sub-menu'));
     }, CFG.directoryLoadTimeout, epoch);
     if (!ready) throw new RecoverableError('课程目录尚未加载，正在等待重新识别', 'directory-load');
@@ -2981,9 +3115,9 @@
         await humanClick(button, epoch);
         const open = await waitUntil(() => chapter.getAttribute('aria-expanded') === 'true', CFG.directoryLoadTimeout, epoch);
         if (!open) throw new RecoverableError('章节暂未展开', 'directory-load');
-        await taskWait(randomDelay(CFG.afterExpandDelayMin, CFG.afterExpandDelayMax), epoch);
       }
-      const chapterReady = await waitUntil(() => !chapter.isConnected || getMenuItems(chapter).length,
+      const chapterReady = await waitUntil(() => !chapter.isConnected ||
+        (directoryMotionFinished(chapter) && getMenuItems(chapter).length),
         CFG.directoryLoadTimeout, epoch);
       if (!chapterReady || !chapter.isConnected) throw new RecoverableError('章节条目尚未加载完成', 'directory-load');
     }
@@ -3124,7 +3258,8 @@
     });
     const reports = new Map();
     let lastPauseAt = 0;
-    let userIntervened = false;
+    let userPauseRequestedAt = 0;
+    let manualPauseRequested = false;
     let recovery = null;
     let identityInvalidated = false;
     let identityMismatch = '';
@@ -3235,7 +3370,9 @@
       reportObserver.observe({ type: 'resource', buffered: false });
     } catch { reportObserver?.disconnect(); reportObserver = null; }
     const observeInput = event => {
-      if (trustedPlayerInput(event, media)) userIntervened = true;
+      if (trustedPlayerInput(event, media)) {
+        if (trustedPlayerPauseInput(event, media)) userPauseRequestedAt = Date.now();
+      }
     };
     const inputTypes = ['pointerdown', 'click', 'keydown'];
     for (const type of inputTypes) document.addEventListener(type, observeInput, { capture: true, passive: true });
@@ -3245,7 +3382,22 @@
     ];
     const observeMedia = event => {
       const observation = playbackObservation(media);
-      if (event.type === 'pause') lastPauseAt = observation.time;
+      if (event.type === 'pause') {
+        lastPauseAt = observation.time;
+        const manual = userPauseRequestedAt > 0 &&
+          observation.time - userPauseRequestedAt <= CFG.manualPauseWindow;
+        userPauseRequestedAt = 0;
+        if (manual && !media.ended && !manualPauseRequested) {
+          manualPauseRequested = true;
+          attempt.manualPause = observation;
+          // Stop the shared task asynchronously after the media event has
+          // propagated. This preserves the pause checkpoint and prevents the
+          // recovery wrapper from turning it into a forced 100% retry.
+          Promise.resolve().then(() => stop(false)).catch(error => {
+            if (!(error instanceof TaskCancelled)) failLocally(error.message);
+          });
+        }
+      }
       if (event.type === 'playing' && !media.paused && !media.ended && !media.seeking) {
         playbackStarted = true;
       }
@@ -3475,12 +3627,24 @@
       } else releaseLoadingMedia(epoch);
       let lastTime = media.currentTime;
       let lastAdvanceAt = Date.now();
+      let lastLoopAt = lastAdvanceAt;
       let pauseSince = 0;
       let playingLogged = false;
       let lastMediaObservationAt = 0;
       while (!media.ended || recovery?.outcome === 'awaiting-website-report') {
         assertRunning(epoch);
         checkPlaybackState();
+        const loopNow = Date.now();
+        const schedulerGap = loopNow - lastLoopAt;
+        // Background tabs can suspend timers for several seconds. That gap is
+        // scheduler inactivity, not evidence that the media stalled or was
+        // paused. Reset the watchdog baseline after the document resumes.
+        const backgroundSuspended = schedulerGap > Math.max(5000, CFG.pollInterval * 4);
+        if (backgroundSuspended) {
+          lastAdvanceAt = loopNow;
+          pauseSince = 0;
+        }
+        lastLoopAt = loopNow;
         if (singlePass && !forcedTarget && appliedTargetRevision !== state.playbackTargetRevision && state.playbackTargetSync) {
           await state.playbackTargetSync;
           assertRunning(epoch);
@@ -3595,7 +3759,7 @@
             setCurrentTask('已经播放至结束，等待网站恢复上报');
           }
         }
-        if (media.paused && !media.ended) {
+        if (!backgroundSuspended && media.paused && !media.ended) {
           pauseSince ||= Date.now();
           if (Date.now() - pauseSince > CFG.gatewayPauseGrace) {
             if (playingLogged && await recoverGatewayPause()) {
@@ -3606,7 +3770,9 @@
             throw new RecoverableError(`${playingLogged ? '播放已暂停' : '播放没有开始'}，正在重新识别播放状态`);
           }
         } else pauseSince = 0;
-        if (!media.ended && Date.now() - lastAdvanceAt > CFG.stallTimeout) throw new RecoverableError('音视频长时间没有播放进展', 'stalled');
+        if (!backgroundSuspended && !media.ended && Date.now() - lastAdvanceAt > CFG.stallTimeout) {
+          throw new RecoverableError('音视频长时间没有播放进展', 'stalled');
+        }
         const pct = media.currentTime / media.duration;
         refreshProgressUI(Number.isFinite(pct) ? pct : null);
         if (!media.ended) setCurrentTask(`正在播放：${title}`);
@@ -3960,7 +4126,51 @@
       deferred: false
     };
     delete result.error;
+    if (completionRecordUnchanged(previous, result)) return;
     await rememberItem(key, result);
+  }
+
+  function completionRecordUnchanged(previous, next) {
+    return previous.confirmed === true && !previous.error &&
+      ['title', 'sitePercent', 'completionSource', 'ended', 'targetReached', 'deferred']
+        .every(field => previous[field] === next[field]);
+  }
+
+  async function saveVisibleCompletions(items, epoch) {
+    return measureScan('completion-checkpoint', async () => {
+      const observations = [];
+      for (const item of items) {
+        const completion = getResourceCompletion(item);
+        if (!completion.confirmed) continue;
+        const key = getItemKey(item), previous = state.processedItems.get(key) || {};
+        const next = { title: itemTitle(item), confirmed: true, sitePercent: completion.sitePercent,
+          completionSource: completion.source, ended: Boolean(previous.ended),
+          targetReached: Boolean(previous.targetReached), deferred: false };
+        if (!completionRecordUnchanged(previous, next)) observations.push(key);
+      }
+      for (let offset = 0; offset < observations.length; offset += 32) {
+        assertRunning(epoch);
+        const current = readDirectory();
+        const entries = observations.slice(offset, offset + 32).map(key => {
+          const item = current.byKey.get(key);
+          if (!item?.isConnected) throw new RecoverableError('目录条目已更新，稍后重新核对', 'directory');
+          const completion = getResourceCompletion(item);
+          return completion.confirmed ? { key, sitePercent: completion.sitePercent, completionSource: completion.source } : null;
+        }).filter(Boolean);
+        if (!entries.length) continue;
+        if (currentCandidate()) {
+          await jobCommand('record-completions', { entries });
+          assertRunning(epoch);
+          for (const entry of entries) {
+            const record = currentCandidate()?.records?.[entry.key];
+            if (record) state.processedItems.set(entry.key, record);
+          }
+        } else {
+          for (const entry of entries) await saveSinglePassCompletion(current.byKey.get(entry.key),
+            { confirmed: true, sitePercent: entry.sitePercent, source: entry.completionSource });
+        }
+      }
+    });
   }
 
   async function saveSinglePassFailure(item, reason) {
@@ -4065,12 +4275,7 @@
       }
       return snapshot;
     };
-    const markVisibleCompletions = async items => {
-      for (const item of items) {
-        const completion = getResourceCompletion(item);
-        if (completion.confirmed) await saveSinglePassCompletion(item, completion);
-      }
-    };
+    const markVisibleCompletions = items => saveVisibleCompletions(items, epoch);
     const getPendingKeys = items => items.filter(item =>
       state.processedItems.get(getItemKey(item))?.confirmed !== true
     ).map(getItemKey);
@@ -4078,10 +4283,11 @@
 
     if (!pass || pass.phase === 'play') {
       setCurrentTask(`首轮处理课程音视频：${currentCandidate()?.title || ''}`);
+      await markVisibleCompletions(videoItems);
       for (const listed of videoItems) {
         assertRunning(epoch);
         const snapshot = requireCompleteDirectory();
-        const item = getMenuItems().find(el => getItemKey(el) === getItemKey(listed));
+        const item = readDirectory().byKey.get(getItemKey(listed));
         if (!item || directorySignature(snapshot) !== directorySignature(getDirectorySnapshot())) continue;
         const key = getItemKey(item);
         const record = state.processedItems.get(key) || {};
@@ -4474,8 +4680,10 @@
   setInterval(updateRoute, 1200);
   if (globalThis.chrome?.runtime?.onMessage) chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     if (message?.channel !== JOB_CHANNEL) return;
+    const previousTabId = state.tabId;
     if (Number.isInteger(message.tabId)) state.tabId = message.tabId;
     const accepted = acceptJob(message.job);
+    if (previousTabId !== state.tabId) state.uiController?.render();
     if (message.reset) {
       // Pause synchronously before acknowledging; an old executor observes
       // the incremented local epoch before it can perform its next action.
@@ -4510,6 +4718,7 @@
     getReportTiming, gatewayFailureForPause, getPlaybackBlockingDialog, trustedPlayerInput,
     getHomeCourseCandidate, scanHomeCourses, runHomeJob, runAgentEntryJob, getAgentTimetableEntry, jobCommand,
     acceptJob, syncSharedJob, chooseLowestRemaining, waitForDirectory, runCurrentCourseJob,
+    readDirectory, saveVisibleCompletions, waitForHomeCards,
     getDirectorySnapshot, directorySignature, knownChaptersHaveItems, playItemWithRecovery, reacquireResource,
     resourceRecovery, nextCourseRetryAt, RecoverableError, DeferredResource,
     playSinglePassItem, runSinglePassCourse

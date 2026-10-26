@@ -286,6 +286,39 @@ test('当前正常播放从100降到80后立即按新目标收尾并保存有效
   } finally { dispose(f); }
 });
 
+test('网页播放器的可信暂停同步停止任务，随后仍可把播放目标改为80%', async () => {
+  const storage = {};
+  const f = targetFixture({ chrome: {
+    runtime: { sendMessage: async () => ({ ok: true, job: null, tabId: 1 }) },
+    storage: { local: {
+      async get(key) { return { [key]: storage[key] }; },
+      async set(values) { Object.assign(storage, values); }
+    } }
+  } });
+  const callbacks = new Map();
+  const document = f.window.document;
+  const addEventListener = document.addEventListener.bind(document);
+  document.addEventListener = (type, callback, options) => {
+    if (['pointerdown', 'click', 'keydown'].includes(type) && options?.capture) callbacks.set(type, callback);
+    addEventListener(type, callback, options);
+  };
+  try {
+    const { task } = await begin(f, { targetPercent: 100 });
+    const pauseControl = document.querySelector('.vjs-play-control');
+    pauseControl.setAttribute('aria-label', '暂停');
+    callbacks.get('pointerdown')({ isTrusted: true, type: 'pointerdown', target: pauseControl });
+    f.media.pause();
+    f.media.dispatchEvent(new f.window.Event('pause'));
+    await assert.rejects(task, error => error.constructor.name === 'TaskCancelled');
+    await f.api.savePlaybackTarget(80);
+    await f.api.state.playbackTargetWrites;
+    assert.equal(f.api.state.mode, 'paused');
+    assert.equal(f.api.getPlaybackTarget(), 80);
+    assert.equal(storage[TARGET_KEY], 80);
+    assert.equal(f.api.state.processedItems.get(f.key).recoveryAttempts || 0, 0);
+  } finally { dispose(f); }
+});
+
 test('当前正常播放从80提高到95后不会在旧目标结束', async () => {
   const f = targetFixture();
   try {

@@ -183,11 +183,11 @@ test('首页导航超时保持任务等待接管；站内其他页的重置进�
   assert.equal(urlNavigations(c).length, 1);
   c.tabs.get(id).url = OTHER;
   r = await c.request(id, 'old', 'reset', { resetEpoch: r.job.resetEpoch }, OTHER);
-  // The tab exists but has no receiving content script. A successful query
-  // must not claim that its media stopped without a matching acknowledgement.
+  // The tab exists but has no receiving content script. Production reset now
+  // reloads that stale document, then persists an idle empty marker.
   assert.equal(r.ok, true);
-  assert.match(r.job.reason, /尚未全部确认停止/);
-  assert.equal(r.job.phase, 'resetting');
+  assert.equal(r.job.reason, undefined);
+  assert.equal(r.job.phase, 'idle');
   assert.equal(r.job.candidates.length, 0);
   assert.equal(r.job.logs.length, 0);
 });

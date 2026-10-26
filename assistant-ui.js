@@ -5,6 +5,9 @@
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
   }[c]));
   const icons = {
+    collapse: '<path d="m6 15 6-6 6 6"/>',
+    help: '<circle cx="12" cy="12" r="9"/><path d="M9.6 9a2.5 2.5 0 0 1 4.8 1c0 1.7-2.4 1.9-2.4 3.5M12 17h.01"/>',
+    github: '<path d="M9 19c-4.3 1.3-4.3-2.2-6-2.7M15 22v-3.4c0-1 .1-1.6-.5-2.2 3.1-.4 6.4-1.5 6.4-7A5.4 5.4 0 0 0 19.4 6a5 5 0 0 0-.1-3.4S18.1 2.2 15 4a13.2 13.2 0 0 0-6 0C5.9 2.2 4.7 2.6 4.7 2.6A5 5 0 0 0 4.6 6a5.4 5.4 0 0 0-1.5 3.4c0 5.5 3.3 6.6 6.4 7-.5.5-.6 1.1-.5 2.2V22"/>',
     settings: '<path d="M9.17 5.16 L10.35 2.64 L13.65 2.64 L14.83 5.16 L14.83 5.16 L17.45 4.22 L19.78 6.55 L18.84 9.17 L18.84 9.17 L21.36 10.35 L21.36 13.65 L18.84 14.83 L18.84 14.83 L19.78 17.45 L17.45 19.78 L14.83 18.84 L14.83 18.84 L13.65 21.36 L10.35 21.36 L9.17 18.84 L9.17 18.84 L6.55 19.78 L4.22 17.45 L5.16 14.83 L5.16 14.83 L2.64 13.65 L2.64 10.35 L5.16 9.17 L5.16 9.17 L4.22 6.55 L6.55 4.22 L9.17 5.16Z"/><circle cx="12" cy="12" r="3.2"/>',
     sponsor: '<path d="m12 3 2.4 6.6L21 12l-6.6 2.4L12 21l-2.4-6.6L3 12l6.6-2.4Z"/>',
     back: '<path d="m14 6-6 6 6 6"/>',
@@ -29,8 +32,10 @@
     box.innerHTML = `
       <header class="hd" id="wb-drag">
         <div class="wb-brand"><img class="wb-brand-image" alt="" draggable="false"><span>芯位教育助手</span></div>
+        <a class="wb-icon" id="wb-github" href="https://github.com/WuXinbo-bo/xinwei-watcher" target="_blank" rel="noopener noreferrer" aria-label="GitHub 项目仓库（新标签页）" title="GitHub 项目仓库">${svg('github')}</a>
+        <button class="wb-icon" id="wb-help" type="button" data-ui-view="help" aria-label="使用指南" title="使用指南">${svg('help')}</button>
         <button class="wb-icon" type="button" data-ui-view="settings" aria-label="设置" title="设置">${svg('settings')}</button>
-        <button class="wb-icon" id="wb-min" type="button" aria-label="收起芯位教育助手">−</button>
+        <button class="wb-icon" id="wb-min" type="button" aria-label="收起芯位教育助手" title="收起面板">${svg('collapse')}</button>
       </header>
       <aside class="wb-sponsor" id="wb-sponsor" aria-label="赞助支持" hidden>
         <a id="wb-sponsor-link" target="_blank" rel="noopener noreferrer sponsored"><span class="wb-sponsor-mark" aria-hidden="true">${svg('sponsor')}</span><span class="wb-sponsor-copy"><span class="wb-sponsor-label">赞助支持</span><span id="wb-sponsor-message"></span></span><span class="wb-sponsor-arrow" aria-hidden="true">↗</span></a>
@@ -43,7 +48,7 @@
           <div class="wb-playback-meta" id="wb-ui-progress" hidden><span id="wb-ui-progress-label"></span><span id="wb-ui-progress-text"></span></div>
           <p class="wb-caption" id="wb-ui-caption"></p>
           <p class="wb-notice" id="wb-ui-notice" hidden></p>
-          <div class="wb-actions"><button class="btn primary start" id="wb-start" type="button">开始</button><button class="btn primary stop" id="wb-stop" type="button" hidden>暂停</button><button class="btn" id="wb-ui-directory" type="button" hidden>查看本课目录</button><button class="btn" id="wb-ui-results" type="button" data-ui-view="alerts" hidden>查看待处理事项</button><button class="btn" id="wb-ui-reset-retry" type="button" data-ui-view="reset" hidden>重试重置</button></div>
+          <div class="wb-actions"><button class="btn primary start" id="wb-start" type="button">开始</button><button class="btn primary stop" id="wb-stop" type="button" hidden>暂停</button><button class="btn" id="wb-ui-directory" type="button" hidden>查看本课目录</button><button class="btn" id="wb-ui-results" type="button" data-ui-view="alerts" hidden>查看待处理事项</button><button class="btn" id="wb-ui-reset-retry" type="button" hidden>重试重置</button></div>
         </section>
         <section class="wb-view" data-view="courses" hidden></section>
         <section class="wb-view" data-view="course" hidden></section>
@@ -64,6 +69,7 @@
           <div class="wb-actions wb-actions-inline">${button('待处理事项', 'alerts')}${button('运行日志', 'logs')}</div>
           <details class="wb-more" id="wb-overview-more" data-ui-disclosure="overview"><summary>更多统计与说明</summary>
             <div id="wb-ui-statistics"></div>
+            <div id="wb-scan-performance"></div>
             <div class="kv"><span>课程任务</span><span id="wb-job-summary">尚未开始</span></div>
             <div class="kv"><span>本轮自然结束</span><span id="wb-count">0</span></div>
             <div class="kv"><span>当前课页面已确认</span><span id="wb-confirmed">—</span></div>
@@ -91,6 +97,7 @@
           <div class="wb-actions"><button class="btn danger" id="wb-reset" type="button">确认重置</button>${button('保留记录', 'settings')}</div>
         </section>
         <section class="wb-view" data-view="about" hidden></section>
+        <section class="wb-view" data-view="help" hidden></section>
         <div class="wb-legacy" aria-hidden="true"><span id="wb-status"></span><span id="wb-current"></span><span id="wb-course"></span><span id="wb-progress"></span><div id="wb-notice"></div><span id="wb-manual"></span><span id="wb-manual-count"></span><span id="wb-video-count"></span><span id="wb-pending-count"></span><div id="wb-video-list"></div><button id="wb-scan" type="button">查看最新目录</button></div>
       </div>
       <nav class="wb-nav" id="wb-ui-nav" aria-label="助手导航"><button class="wb-link" type="button" data-ui-view="courses">全部课程</button><button class="wb-link" id="wb-ui-alert-link" type="button" data-ui-view="alerts" hidden></button><button class="wb-link" type="button" data-ui-view="details">概览</button></nav>
@@ -99,6 +106,7 @@
     if (imageUrl) box.querySelector('.wb-brand-image').src = imageUrl;
     const body = $('wb-body');
     let view = 'home', selectedCourse = null, selectedResource = null, courseFilter = 'all', model = null;
+    let helpReturn = 'home';
     let contentSignature = '', scheduled = false, runId = null;
     const scroll = new Map(), chapters = new Map(), disclosures = new Map();
     let restore = null, storageKey = null, preferencesReady = false, viewRevision = 0;
@@ -267,6 +275,17 @@
       html += `<details class="wb-more" data-ui-disclosure="${esc(`resource:${selectedCourse}:${selectedResource}`)}"><summary>状态说明</summary><p class="wb-caption">达到播放目标不等于自然结束，也不等于平台已确认完成。</p>${record?.error && confirmed ? `<p class="wb-caption">此前记录：${esc(record.error)}。平台当前已确认。</p>` : ''}</details>`;
       return html;
     }
+    function helpPage() {
+      return `<button class="wb-link wb-back" type="button" data-help-return>${svg('back')}返回原面板</button><h2 class="wb-title">使用指南</h2>
+        <p class="wb-caption">先核对课程，再开始学习。查看指南不会暂停或切换任务。</p>
+        <ol class="wb-guide-steps"><li><strong>登录并开始</strong><p>登录芯位蜜线，点击悬浮球打开助手，再点击“开始”。助手会进入课表，扫描全部正在上的课程，逐门统计后安排学习。</p></li>
+        <li><strong>查看课程与目录</strong><p>点击课程总览查看全部课程；点击本课学习项查看章节、音视频和详情。未扫描完成时显示“待统计”，浏览目录不会切换播放。</p></li>
+        <li><strong>设置播放目标</strong><p>点击齿轮设置 80%–100% 目标。有效整数立即保存，当前正常播放在下一次检查采用新值；异常重试保持 100%。达到目标与平台确认分别记录。</p></li>
+        <li><strong>暂停或继续</strong><p>需要停下时点击“暂停”。收起面板只隐藏界面，不会暂停任务。任务暂停后，按页面提示继续。</p></li></ol>
+        <details class="wb-more" data-ui-disclosure="guide-wait"><summary>扫描等待或数量不一致</summary><p class="wb-caption">保持课表和学习页打开，等待章节加载。新增资源、目录变化或网络延迟时会重新核对；请先核对网站目录，不要反复点击开始。可在“设置 → 任务概览与日志”查看原因。</p></details>
+        <details class="wb-more" data-ui-disclosure="guide-restart"><summary>更新、中断与重置</summary><p class="wb-caption">更新后重载扩展并刷新课程页。扩展重启后如显示任务已中断，请回到首页点击开始，重新核对课程。重置会停止任务并清除本地断点、统计和日志，不会删除网站进度。</p></details>
+        <details class="wb-more" data-ui-disclosure="guide-limits"><summary>哪些内容需要自己处理</summary><p class="wb-caption">登录失效、验证码、题目和平台限制需要人工处理。当前按正在上的课程扫描，不提供仅考核课程筛选或自定义节数。文档、作业和考试仍需自行处理；最终完成状态以平台为准。</p></details>`;
+    }
     function aboutPage() {
       let html = title('关于与服务', 'settings', '设置') + '<p class="wb-caption">Xinwei Course Watcher · 1.1.0 候选版本</p>' + note('面向 Beeline AI 学习页面。保留原作者署名与 Apache License 2.0。');
       const data = sponsorData();
@@ -279,6 +298,7 @@
       else if (view === 'course') html = coursePage();
       else if (view === 'resource') html = resourcePage();
       else if (view === 'about') html = aboutPage();
+      else if (view === 'help') html = helpPage();
       else return;
       const signature = `${view}:${html}`;
       if (signature === contentSignature) return;
@@ -320,7 +340,7 @@
       try {
         if (!storageKey || !preferencesReady) return;
         const snapshot = {
-          runId, view: view === 'reset' ? 'settings' : view, selectedCourse, selectedResource, courseFilter,
+          runId, view: view === 'reset' ? 'settings' : view, helpReturn, selectedCourse, selectedResource, courseFilter,
           scroll: [...scroll].slice(-300), chapters: [...chapters].slice(-300), disclosures: [...disclosures].slice(-300), shell: getShell?.()
         };
         Promise.resolve(globalThis.chrome?.storage?.local?.set({ [storageKey]: snapshot })).catch(() => {});
@@ -329,6 +349,7 @@
     window.addEventListener('pagehide', saveView);
     function navigate(next, selection = {}) {
       if (!box.querySelector(`[data-view="${next}"]`)) return;
+      if (next === 'help' && view !== 'help') helpReturn = view === 'reset' ? 'settings' : view;
       viewRevision++;
       rememberDisclosures(box.querySelector(`.wb-view[data-view="${view}"]`));
       scroll.set(scrollKey(), body.scrollTop);
@@ -367,6 +388,8 @@
         if ((restore.runId || null) === (model.job?.runId || null) &&
           typeof restore.view === 'string' && [...box.querySelectorAll('.wb-view')].some(page => page.dataset.view === restore.view)) {
           view = restore.view === 'reset' ? 'settings' : restore.view;
+          if (typeof restore.helpReturn === 'string' && restore.helpReturn !== 'help' && restore.helpReturn !== 'reset' &&
+            [...box.querySelectorAll('.wb-view')].some(page => page.dataset.view === restore.helpReturn)) helpReturn = restore.helpReturn;
           selectedCourse = typeof restore.selectedCourse === 'string' ? restore.selectedCourse : null;
           selectedResource = typeof restore.selectedResource === 'string' ? restore.selectedResource : null;
           courseFilter = ['all', 'complete', 'pending', 'attention'].includes(restore.courseFilter) ? restore.courseFilter : 'all';
@@ -431,6 +454,9 @@
       $('wb-log').hidden = model.logCount === 0;
       const stats = kv('任务范围', model.job?.scope === 'single' ? '当前课程' : '全部正在上的课程') + kv('本轮达到播放目标', model.targetReached) + kv('任务中已确认记录', model.confirmed);
       if ($('wb-ui-statistics').innerHTML !== stats) $('wb-ui-statistics').innerHTML = stats;
+      const stages = { 'home-overview': '课表总览', 'course-directory': '本课目录', 'completion-checkpoint': '完成状态核对' };
+      const timings = (model.scanPerformance || []).map(item => kv(stages[item.stage] || '扫描', `${(item.durationMs / 1000).toFixed(2)} 秒${item.ok ? '' : ' · 未完成'}`)).join('');
+      if ($('wb-scan-performance').innerHTML !== timings) $('wb-scan-performance').innerHTML = timings;
       const overview = model.overview;
       text('wb-overview-courses', overview.courseTotal == null ? model.job ? '统计中' : '待扫描' : `${overview.courseConfirmed} / ${overview.courseTotal}`);
       text('wb-overview-media', overview.mediaTotal == null ? overview.mediaConfirmed ? `${overview.mediaConfirmed} / …` : '统计中' : `${overview.mediaConfirmed} / ${overview.mediaTotal}`);
@@ -451,6 +477,7 @@
     box.addEventListener('click', event => {
       const control = event.target.closest('button');
       if (!control || control.disabled) return;
+      if (control.hasAttribute('data-help-return')) { navigate(helpReturn); $('wb-help').focus({ preventScroll: true }); return; }
       if (control.hasAttribute('data-course-filter')) navigate('courses', { filter: control.dataset.courseFilter });
       else if (control.id === 'wb-ui-directory' || control.hasAttribute('data-current-directory')) {
         const c = model.courses.find(c => courseKey(c) === model.activeCourseKey);
@@ -460,7 +487,7 @@
       else if (control.hasAttribute('data-course')) { const c = model.courses[Number(control.dataset.course)]; if (c) navigate('course', { course: courseKey(c) }); }
       else if (control.hasAttribute('data-resource')) { const c = findCourse(); const item = c?.directory?.items[Number(control.dataset.resource)]; if (item) navigate('resource', { resource: item.key }); }
       else if (control.hasAttribute('data-ui-locate')) onLocate?.(selectedCourse, control.dataset.uiLocate);
-      else if (control.id === 'wb-reset') onReset?.();
+      else if (control.id === 'wb-reset' || control.id === 'wb-ui-reset-retry') onReset?.();
     });
     box.addEventListener('toggle', event => {
       const el = event.target;
@@ -470,6 +497,7 @@
     }, true);
     box.addEventListener('keydown', event => {
       if (event.key !== 'Escape' || view === 'home') return;
+      if (view === 'help') { event.stopPropagation(); navigate(helpReturn); $('wb-help').focus({ preventScroll: true }); return; }
       event.stopPropagation(); navigate(view === 'resource' ? 'course' : view === 'course' ? 'courses' : view === 'logs' ? 'details' : 'home');
     });
     return {

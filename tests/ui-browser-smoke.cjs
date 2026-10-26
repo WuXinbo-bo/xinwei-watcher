@@ -32,6 +32,7 @@ async function main() {
         '</ul></li></ul></div><video></video></main>'
     }));
     await context.route('https://88cf.scxai.top/**', route => route.fulfill({ contentType: 'text/html', body: '<title>赞助链接本地测试</title>' }));
+    await context.route('https://github.com/WuXinbo-bo/xinwei-watcher', route => route.fulfill({ contentType: 'text/html', body: '<title>仓库跳转本地测试</title>' }));
     const page = await context.newPage();
     page.on('pageerror', error => errors.push(error.message));
     const cdp = await context.newCDPSession(page), contexts = [];
@@ -60,6 +61,19 @@ async function main() {
     assert.equal(await page.locator('#wb-playback-target').isVisible(), false);
     assert.equal(await panel.getAttribute('aria-label'), '芯位教育助手');
     assert.equal(await page.locator('#wb-drag [aria-label=设置]').getAttribute('title'), '设置');
+    await page.locator('#wb-help').click();
+    assert.equal(await page.locator('.wb-view[data-view=help]').isVisible(), true);
+    await snap('01a-guide');
+    await page.keyboard.press('Escape');
+    assert.equal(await page.locator('#wb-help').evaluate(el => el === document.activeElement), true);
+    const githubPopupPromise = context.waitForEvent('page');
+    await page.locator('#wb-github').click();
+    const githubPopup = await githubPopupPromise; await githubPopup.waitForLoadState();
+    assert.equal(githubPopup.url(), 'https://github.com/WuXinbo-bo/xinwei-watcher');
+    assert.equal(await githubPopup.evaluate(() => window.opener === null), true);
+    await githubPopup.close(); await page.bringToFront();
+    assert.equal(await page.locator('#wb-drag').evaluate(el => el.scrollWidth <= el.clientWidth), true);
+    checks.push('guide, Escape return and focus, safe GitHub new-tab navigation, header fits');
     const sponsor = page.locator('#wb-sponsor'), sponsorCopy = page.locator('#wb-sponsor-message');
     assert.equal(await sponsor.isVisible(), true);
     assert.equal(await sponsor.evaluate(el => el.previousElementSibling.id), 'wb-drag');

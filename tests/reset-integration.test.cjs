@@ -7,6 +7,23 @@ const KEY = 'xinwei-job-v3';
 const COURSE = 'https://www.beeline-ai.com/student/#/courseInfo/learn/courseWare/course-1/video/resource-1?classId=class-1';
 const AGENT = 'https://www.beeline-ai.com/stu/agent';
 
+test('重置时旧标签页没有扩展接收端会自动刷新并完成清理', async () => {
+  const c = coordinator();
+  const home = c.addTab(AGENT);
+  const worker = c.addTab(COURSE, home);
+  c.storage.session[KEY] = {
+    version: 3, runId: 'stale-run', generation: 4, revision: 1, resetEpoch: 0,
+    running: true, phase: 'course', scope: 'all', homeTabId: home, workerTabId: worker,
+    ownerTabId: worker, ownerInstance: 'stale-worker', candidates: [], logs: []
+  };
+
+  const result = await c.request(home, 'home', 'reset', { resetEpoch: 0 }, AGENT);
+  assert.equal(result.ok, true);
+  assert.equal(result.job.phase, 'idle');
+  assert.deepEqual(c.reloads.sort((a, b) => a - b), [home, worker]);
+  assert.deepEqual(c.storage.session[KEY].candidates, []);
+});
+
 test('运行中重置先确认：取消保留任务，确认停止并清空，旧消息不复活，再次开始回首页', async () => {
   const c = coordinator();
   const id = c.addTab(COURSE);

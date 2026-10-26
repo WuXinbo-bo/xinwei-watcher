@@ -77,6 +77,31 @@ test('自然播放的时间推进不依赖测试时钟或稀疏轮询推断为�
   } finally { f.dom.window.close(); }
 });
 
+test('后台标签页计时器长时间挂起不会误报播放卡住', async () => {
+  const f = recoveryFixture({ duration: 60 });
+  let visibility = 'hidden';
+  Object.defineProperty(f.window.document, 'visibilityState', {
+    configurable: true, get: () => visibility
+  });
+  try {
+    const task = f.api.playItemToEnd(f.item, 0, f.api.currentCourseKey());
+    let settled = false;
+    task.finally(() => { settled = true; }).catch(() => {});
+    await waitFor(() => f.api.state.processedItems.get(f.key)?.playbackAttempt?.after);
+    await new Promise(resolve => setTimeout(resolve, 40));
+    assert.equal(settled, false, '隐藏页面不应因为定时器挂起触发 stalled 恢复');
+    f.advanceNaturally(1);
+    f.media.dispatchEvent(new f.window.Event('playing'));
+    await new Promise(resolve => setTimeout(resolve, 15));
+    visibility = 'visible';
+    f.item.querySelector('.lecture-status').innerHTML = '<i class="done-icon"></i>';
+    f.advanceNaturally(60, true);
+    f.media.dispatchEvent(new f.window.Event('ended'));
+    const result = await task;
+    assert.equal(result.ended, true);
+  } finally { f.dom.window.close(); }
+});
+
 test('明显前跳保存缺口；后来ended和页面完成标记不能抹去缺口', async () => {
   const f = recoveryFixture();
   try {

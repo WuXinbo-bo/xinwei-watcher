@@ -111,7 +111,7 @@ function capturePlayerInputs(f) {
     assert.ok(callback, 'the product must observe this player input');
     // A plain argument exercises the captured listener. It does not manufacture
     // a trusted DOM event, browser activation or an actual player interaction.
-    callback({ type, target, isTrusted: true });
+    callback({ type, target, isTrusted: true, ...(type === 'keydown' ? { key: ' ' } : {}) });
   };
 }
 
@@ -446,26 +446,38 @@ test('第二次网关暂停交给外层重新识别，当前尝试不连续重�
 });
 
 for (const intervention of ['pointerdown', 'keydown']) {
-  test(`可信${intervention}不会永久暂停任务，同资源普通暂停仍可正常恢复`, async () => {
+  test(`可信${intervention}后暂停会同步为人工暂停，不进入强制100%重试`, async () => {
     const f = gatewayFixture();
     const invokeInput = capturePlayerInputs(f);
     try {
-      respondAfterRetry(f);
       await f.begin();
-      invokeInput(intervention);
-      f.report(502);
+      const pauseControl = f.window.document.querySelector('.vjs-play-control');
+      pauseControl.setAttribute('aria-label', '暂停');
+      invokeInput(intervention, pauseControl);
       f.pauseFromWebsite();
-      await waitFor(() => f.attempt?.recoveries[0]?.outcome === 'transport-restored');
-      assert.equal(f.clicks.length, 2);
-      assert.equal(f.attempt.recoveries.length, 1);
-      assert.equal(f.api.state.processedItems.get(f.key).ended, false);
-      f.finishFromWebsite();
-      const result = await f.task;
-      assert.equal(result.ended, true);
-      assert.equal(result.confirmed, true);
+      await assert.rejects(f.task, error => error.constructor.name === 'TaskCancelled');
+      assert.equal(f.clicks.length, 1);
+      assert.equal(f.attempt.recoveries?.length || 0, 0);
+      assert.equal(f.api.state.mode, 'paused');
     } finally { f.dom.window.close(); }
   });
 }
+
+test('播放器内非暂停控件的可信指针操作不会把随后网关暂停误判为用户暂停', async () => {
+  const f = gatewayFixture();
+  const invokeInput = capturePlayerInputs(f);
+  try {
+    respondAfterRetry(f);
+    await f.begin();
+    const controlBar = f.window.document.querySelector('.vjs-control-bar');
+    invokeInput('pointerdown', controlBar);
+    f.report(502);
+    f.pauseFromWebsite();
+    await waitFor(() => f.attempt?.recoveries[0]?.outcome === 'transport-restored');
+    assert.equal(f.clicks.length, 2);
+    assert.notEqual(f.api.state.mode, 'paused');
+  } finally { f.dom.window.close(); }
+});
 
 test('网站可见题目提示出现后，即使502关联也停止且保留提示', async () => {
   const f = gatewayFixture();

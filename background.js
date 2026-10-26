@@ -987,6 +987,7 @@
     }
     empty.resetHoldTabIds = holdIds.filter(id => present.has(id));
     const required = new Set(empty.resetHoldTabIds);
+    const reloaded = [];
     const outcomes = await Promise.all(tabs.map(async tab => {
       let timer;
       try {
@@ -994,12 +995,28 @@
           chrome.tabs.sendMessage(tab.id, { channel: CHANNEL, job: empty, tabId: tab.id, reset: true }),
           new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('timeout')), 5000); })
         ]);
-        return !required.has(tab.id) || (result?.resetEpoch === empty.resetEpoch && result.stopped === true);
+        if (!required.has(tab.id) || (result?.resetEpoch === empty.resetEpoch && result.stopped === true)) return true;
+        // The old document answered but could not pause its media (for
+        // example while its player is suspended). A reset must still stop the
+        // page, so use the same reload fallback as a missing listener.
+        await chrome.tabs.reload(tab.id);
+        reloaded.push(tab.id);
+        return true;
       } catch {
         if (!required.has(tab.id)) return true;
-        // A tab closed during delivery has no media left to stop. A living
-        // document without acknowledgement requires the user's attention.
-        try { await chrome.tabs.get(tab.id); return false; } catch { return true; }
+        // A stale, discarded, or extension-reloaded document may no longer
+        // have a content listener. Reset is already persisted before this
+        // point; reloading the task page is the safe stop acknowledgement and
+        // lets the new document observe the empty reset marker on startup.
+        try {
+          await chrome.tabs.get(tab.id);
+          await chrome.tabs.reload(tab.id);
+          reloaded.push(tab.id);
+          return true;
+        } catch {
+          // A tab closed during delivery has no media left to stop.
+          try { await chrome.tabs.get(tab.id); return false; } catch { return true; }
+        }
       } finally { clearTimeout(timer); }
     }));
     if (saved && outcomes.every(Boolean)) {
@@ -1009,6 +1026,14 @@
       empty.reason = saved
         ? '原任务页面尚未全部确认停止。请刷新仍打开的任务页，再点击重置；旧任务记录已清除。'
         : '本地记录清理尚未完整保存，已保持停止；请重试重置。';
+    }
+    if (reloaded.length) {
+      // Reloading a task tab stops its old media and the empty marker prevents
+      // the replacement document from reviving the erased run. Keep the
+      // marker in resetHoldTabIds until the tab reports its new document.
+      empty.reason = '';
+      empty.phase = 'idle';
+      delete empty.reason;
     }
     await save(empty);
     // All site panels see the new empty state, while only task pages pause
@@ -1049,6 +1074,76 @@
       // The persisted entry deadline will retry this observed departure page.
     }
     return job;
+  }
+
+  function applyResourceRecord(job, msg, sender) {
+    requireOwner(job, msg, sender, ['course']);
+    const candidate = job.candidates[job.targetIndex];
+    if (courseKey(sender) !== candidate.courseKey) throw new Error('课程身份已改变');
+    if (typeof msg.key !== 'string' || !msg.key.trim() || !msg.result ||
+      typeof msg.result !== 'object' || Array.isArray(msg.result) ||
+      ['started', 'attempted', 'ended', 'confirmed'].some(field =>
+        msg.result[field] != null && typeof msg.result[field] !== 'boolean')) {
+      throw new Error('音视频记录无法确认');
+    }
+    if (job.singlePass && (
+      ['targetReached', 'deferred'].some(field =>
+        msg.result[field] != null && typeof msg.result[field] !== 'boolean') ||
+      (msg.result.effectiveTarget != null && !validTargetPercent(msg.result.effectiveTarget)) ||
+      (msg.result.sitePercent != null && (!Number.isFinite(msg.result.sitePercent) ||
+        msg.result.sitePercent < 0 || msg.result.sitePercent > 100)) ||
+      (msg.result.completionSource != null &&
+        !['page-marker', 'site-progress'].includes(msg.result.completionSource)) ||
+      (msg.result.confirmed === true && candidate.records?.[msg.key]?.confirmed !== true &&
+        !(msg.result.completionSource === 'page-marker' ||
+          (msg.result.completionSource === 'site-progress' && msg.result.sitePercent >= 80))) ||
+      !candidate.directory?.items?.some(item => item.key === msg.key &&
+        ['video', 'audio', 'media'].includes(item.mediaType)))) {
+      throw new Error('音视频观看目标或平台状态无法确认');
+    }
+    candidate.records ||= {};
+    const previous = candidate.records[msg.key];
+    const next = { ...previous, ...msg.result };
+    if (job.singlePass) {
+      next.effectiveTarget = previous?.effectiveTarget === 100 &&
+        ((previous.recoveryAttempts || 0) + (previous.finalAttempts || 0) > 0)
+        ? 100 : msg.result.effectiveTarget ?? previous?.effectiveTarget ?? job.targetPercent ?? 100;
+      // Retry budgets belong to background checkpoints, not content records.
+      for (const field of ['recoveryAttempts', 'finalAttempts', 'retryTokens']) {
+        if (previous?.[field] == null) delete next[field];
+        else next[field] = previous[field];
+      }
+    }
+    if (previous?.recovery || msg.result.recovery) {
+      next.recovery = recordRecovery(candidate, previous?.recovery, msg.result.recovery);
+    }
+    if (previous?.ended === true) {
+      next.ended = true;
+      if (previous.playbackAttempt) {
+        if (msg.result.ended !== true) next.playbackAttempt = previous.playbackAttempt;
+        else {
+          next.playbackAttempt = { ...previous.playbackAttempt, ...msg.result.playbackAttempt };
+          if (previous.playbackAttempt.finished) {
+            next.playbackAttempt.finished = previous.playbackAttempt.finished;
+          }
+          const endEvents = (previous.playbackAttempt.events || []).filter(event => event.type === 'ended');
+          if (endEvents.length && !next.playbackAttempt.events?.some(event => event.type === 'ended')) {
+            next.playbackAttempt.events = [...(next.playbackAttempt.events || []), ...endEvents];
+          }
+        }
+      }
+    }
+    if (previous?.confirmed === true) next.confirmed = true;
+    if (previous?.started === true) next.started = true;
+    if (previous?.attempted === true) next.attempted = true;
+    if (next.ended === true && next.progressGap) throw new Error('仍有未观看的进度区间，不能确认播放结束');
+    if (next.ended === true || (job.singlePass && next.confirmed === true)) delete next.error;
+    candidate.records[msg.key] = next;
+    const released = next.ended === true ||
+      (job.singlePass && (next.targetReached === true || next.deferred === true || next.confirmed === true));
+    if (candidate.currentResource?.key === msg.key && released) delete candidate.currentResource;
+    if (job.singlePass && released && job.interruption?.courseKey === candidate.courseKey &&
+      job.interruption.key === msg.key) delete job.interruption;
   }
 
   async function handle(msg, sender) {
@@ -1898,74 +1993,35 @@
       episode.position = observed.position;
       return save(job);
     }
-    if (msg.action === 'record') {
+    if (msg.action === 'record-completions') {
+      requireOwner(job, msg, sender, ['course']);
+      if (!job.singlePass || !Array.isArray(msg.entries) || !msg.entries.length || msg.entries.length > 32 ||
+        new Set(msg.entries.map(entry => entry?.key)).size !== msg.entries.length) {
+        throw new Error('批量平台状态无法确认');
+      }
+      const currentTab = await chrome.tabs.get(tabId);
       requireOwner(job, msg, sender, ['course']);
       const candidate = job.candidates[job.targetIndex];
-      if (courseKey(sender) !== candidate.courseKey) throw new Error('课程身份已改变');
-      if (typeof msg.key !== 'string' || !msg.key.trim() || !msg.result ||
-        typeof msg.result !== 'object' || Array.isArray(msg.result) ||
-        ['started', 'attempted', 'ended', 'confirmed'].some(field =>
-          msg.result[field] != null && typeof msg.result[field] !== 'boolean')) {
-        throw new Error('音视频记录无法确认');
-      }
-      if (job.singlePass && (
-        ['targetReached', 'deferred'].some(field =>
-          msg.result[field] != null && typeof msg.result[field] !== 'boolean') ||
-        (msg.result.effectiveTarget != null && !validTargetPercent(msg.result.effectiveTarget)) ||
-        (msg.result.sitePercent != null && (!Number.isFinite(msg.result.sitePercent) ||
-          msg.result.sitePercent < 0 || msg.result.sitePercent > 100)) ||
-        (msg.result.completionSource != null &&
-          !['page-marker', 'site-progress'].includes(msg.result.completionSource)) ||
-        (msg.result.confirmed === true && candidate.records?.[msg.key]?.confirmed !== true &&
-          !(msg.result.completionSource === 'page-marker' ||
-            (msg.result.completionSource === 'site-progress' && msg.result.sitePercent >= 80))) ||
-        !candidate.directory?.items?.some(item => item.key === msg.key &&
-          ['video', 'audio', 'media'].includes(item.mediaType)))) {
-        throw new Error('音视频观看目标或平台状态无法确认');
-      }
-      candidate.records ||= {};
-      const previous = candidate.records[msg.key];
-      const next = { ...previous, ...msg.result };
-      if (job.singlePass) {
-        next.effectiveTarget = previous?.effectiveTarget === 100 &&
-          ((previous.recoveryAttempts || 0) + (previous.finalAttempts || 0) > 0)
-          ? 100 : msg.result.effectiveTarget ?? previous?.effectiveTarget ?? job.targetPercent ?? 100;
-        // Retry budgets belong to background checkpoints, not content records.
-        for (const field of ['recoveryAttempts', 'finalAttempts', 'retryTokens']) {
-          if (previous?.[field] == null) delete next[field];
-          else next[field] = previous[field];
+      if (!isSite({ ...sender, url: currentTab.url }) || route({ url: currentTab.url }) !== 'learn' ||
+        courseKey({ url: currentTab.url }) !== candidate.courseKey) throw new Error('课程身份已改变');
+      // Validate on the read copy; nothing is persisted until all entries pass.
+      for (const entry of msg.entries) {
+        if (!entry || !['page-marker', 'site-progress'].includes(entry.completionSource) ||
+          !(entry.completionSource === 'page-marker' || entry.sitePercent >= 80)) {
+          throw new Error('批量平台完成证据无法确认');
         }
+        const previous = candidate.records?.[entry.key] || {};
+        const item = candidate.directory?.items?.find(item => item.key === entry.key);
+        applyResourceRecord(job, { ...msg, key: entry.key, result: {
+          title: item?.title, confirmed: true, sitePercent: entry.sitePercent,
+          completionSource: entry.completionSource, ended: Boolean(previous.ended),
+          targetReached: Boolean(previous.targetReached), deferred: false
+        } }, sender);
       }
-      if (previous?.recovery || msg.result.recovery) {
-        next.recovery = recordRecovery(candidate, previous?.recovery, msg.result.recovery);
-      }
-      if (previous?.ended === true) {
-        next.ended = true;
-        if (previous.playbackAttempt) {
-          if (msg.result.ended !== true) next.playbackAttempt = previous.playbackAttempt;
-          else {
-            next.playbackAttempt = { ...previous.playbackAttempt, ...msg.result.playbackAttempt };
-            if (previous.playbackAttempt.finished) {
-              next.playbackAttempt.finished = previous.playbackAttempt.finished;
-            }
-            const endEvents = (previous.playbackAttempt.events || []).filter(event => event.type === 'ended');
-            if (endEvents.length && !next.playbackAttempt.events?.some(event => event.type === 'ended')) {
-              next.playbackAttempt.events = [...(next.playbackAttempt.events || []), ...endEvents];
-            }
-          }
-        }
-      }
-      if (previous?.confirmed === true) next.confirmed = true;
-      if (previous?.started === true) next.started = true;
-      if (previous?.attempted === true) next.attempted = true;
-      if (next.ended === true && next.progressGap) throw new Error('仍有未观看的进度区间，不能确认播放结束');
-      if (next.ended === true || (job.singlePass && next.confirmed === true)) delete next.error;
-      candidate.records[msg.key] = next;
-      const released = next.ended === true ||
-        (job.singlePass && (next.targetReached === true || next.deferred === true || next.confirmed === true));
-      if (candidate.currentResource?.key === msg.key && released) delete candidate.currentResource;
-      if (job.singlePass && released && job.interruption?.courseKey === candidate.courseKey &&
-        job.interruption.key === msg.key) delete job.interruption;
+      return save(job);
+    }
+    if (msg.action === 'record') {
+      applyResourceRecord(job, msg, sender);
       return save(job);
     }
     if (msg.action === 'reload-course') {

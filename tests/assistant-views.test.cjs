@@ -118,7 +118,10 @@ test('task phases, pending operations and local manual stop have truthful home s
     job.phase = 'manual'; job.reason = '请处理验证码'; check('需要你处理'); assert.match(box.querySelector('#wb-ui-notice').textContent, /验证码/);
     state.storageFailed = true; check('保存失败'); assert.equal(box.querySelector('#wb-start').hidden, true); state.storageFailed = false;
     state.resetPending = true; check('正在重置'); state.resetPending = false;
-    state.mode = 'resetting'; check('重置尚未完成'); assert.equal(box.querySelector('#wb-ui-reset-retry').hidden, false);
+    state.mode = 'resetting'; check('重置尚未完成');
+    const retry = box.querySelector('#wb-ui-reset-retry');
+    assert.equal(retry.hidden, false);
+    assert.equal(retry.hasAttribute('data-ui-view'), false, '重试按钮应直接执行重置，而不是只打开确认页');
     state.mode = 'manual'; state.manualNotice = '登录失效'; state.job = null; check('需要你处理');
     assert.match(box.querySelector('#wb-ui-notice').textContent, /登录失效/);
   } finally { close(f); }
@@ -274,5 +277,25 @@ test('unavailable preference storage cannot prevent controls or navigation', asy
     f.window.dispatchEvent(new f.window.Event('pagehide')); await settled();
     assert.equal(ui.view, 'settings');
     ui.navigate('home'); assert.equal(f.window.document.getElementById('wb-start').disabled, false);
+  } finally { close(f); }
+});
+
+test('tab identity arriving after the first render restores an expanded shell on a new document', async () => {
+  const values = {
+    'wb-assistant-ui-v1:1': {
+      runId: null, view: 'home', shell: { expanded: true, left: 620, top: 120 }
+    }
+  };
+  const f = fixture([], { chrome: preferenceChrome(values) });
+  try {
+    const box = f.window.document.getElementById('wb-study-ui');
+    assert.equal(f.api.state.tabId, null, 'the initial render runs before the tab handshake');
+    assert.equal(box.hidden, true);
+    await f.api.syncSharedJob();
+    await settled();
+    assert.equal(box.hidden, false);
+    assert.equal(f.window.document.getElementById('wb-assistant-button').hidden, true);
+    assert.equal(box.style.left, '620px');
+    assert.ok(parseFloat(box.style.top) >= 8, 'restored panel stays inside the visible viewport');
   } finally { close(f); }
 });
