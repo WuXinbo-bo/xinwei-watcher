@@ -368,15 +368,18 @@ test('a delayed event read cannot overwrite a newer local edit', async () => {
   }
 });
 
-test('manual warning list is always visible and red when populated', () => {
+test('manual warnings are available on demand in the alerts view', () => {
   const f = fixture([]);
   try {
     const list = f.window.document.getElementById('wb-manual-list');
-    assert.equal(list.closest('details'), null);
     assert.equal(list.getAttribute('aria-live'), 'polite');
-    list.className = 'manual-list';
-    const style = f.window.getComputedStyle(list);
-    assert.equal(style.color, 'rgb(180, 35, 24)');
-    assert.notEqual(style.display, 'none');
+    assert.equal(list.closest('[data-view]').hidden, true);
+    f.api.state.manualItems = ['需要确认课程状态'];
+    f.api.updateTaskControls();
+    const link = f.window.document.getElementById('wb-ui-alert-link');
+    assert.equal(link.hidden, false);
+    assert.match(link.textContent, /待处理 1/);
+    link.click();
+    assert.equal(list.closest('[data-view]').hidden, false);
   } finally { close(f); }
 });

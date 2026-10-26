@@ -527,7 +527,7 @@ test('存储字段顺序改变但目录值相同时复用新 DOM，零展开并�
       ...snapshot,
       items: snapshot.items.map(item => ({
         durationSeconds: item.durationSeconds, key: item.key,
-        mediaType: item.mediaType, title: item.title
+        mediaType: item.mediaType, title: item.title, chapterTitle: item.chapterTitle
       }))
     };
     assert.deepEqual(stored.items, snapshot.items);
@@ -572,7 +572,7 @@ test('存储字段顺序改变且一个时长值变化时不复用，正常展�
       ...snapshot,
       items: snapshot.items.map(item => ({
         durationSeconds: item.durationSeconds, key: item.key,
-        mediaType: item.mediaType, title: item.title
+        mediaType: item.mediaType, title: item.title, chapterTitle: item.chapterTitle
       }))
     };
     assert.equal(f.api.directorySignature(stored), f.api.directorySignature(snapshot));

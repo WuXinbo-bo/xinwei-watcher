@@ -21,14 +21,10 @@ test('运行中重置先确认：取消保留任务，确认停止并清空，�
       };
     }
   });
-  let confirmations = 0, approved = false, clicks = 0;
+  let clicks = 0;
   const [item, completedItem] = f.api.getMenuItems();
   item.classList.add('is-active');
-  f.window.confirm = text => {
-    assert.match(text, /清除本地任务、断点、课程统计、日志和错误记录/);
-    confirmations += 1;
-    return approved;
-  };
+  f.window.confirm = () => { throw new Error('新版重置应使用面板内确认'); };
   f.window.document.querySelector('.vjs-big-play-button').addEventListener('click', () => { clicks += 1; });
   // A website-owned marker must not be changed by an extension data reset.
   item.querySelector('.lecture-status').dataset.platform = 'preserve';
@@ -43,19 +39,23 @@ test('运行中重置先确认：取消保留任务，确认停止并清空，�
     const oldInstance = f.api.state.instanceId;
     const oldRecordMessage = messages.find(message => message.action === 'record');
     assert.ok(oldRecordMessage);
-    f.window.document.getElementById('wb-reset').click();
-    assert.equal(confirmations, 1);
+    f.api.state.uiController.navigate('settings');
+    f.window.document.getElementById('wb-reset-menu').click();
+    assert.equal(f.api.state.uiController.view, 'reset');
+    assert.match(f.window.document.querySelector('[data-view=reset]').textContent, /清除本地任务、断点、课程统计、日志和错误记录/);
+    f.window.document.getElementById('wb-reset-cancel').click();
+    assert.equal(f.api.state.uiController.view, 'settings');
     assert.equal(c.storage.session[KEY].runId, before.runId);
     assert.equal(c.storage.session[KEY].running, true);
     assert.equal(f.media.paused, false);
     assert.equal(messages.filter(message => message.action === 'reset').length, 0);
 
-    approved = true;
+    f.window.document.getElementById('wb-reset-menu').click();
     const pendingExecution = f.api.state.jobPromise;
     f.window.document.getElementById('wb-reset').click();
     await pendingExecution;
     await waitFor(() => f.api.state.mode === 'idle' && !f.api.state.resetPending);
-    assert.equal(confirmations, 2);
+    assert.equal(f.api.state.uiController.view, 'home');
     assert.equal(messages.filter(message => message.action === 'reset').length, 1);
     assert.equal(f.media.paused, true);
     assert.equal(f.media.currentTime, 10);

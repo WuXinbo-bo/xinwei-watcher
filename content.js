@@ -102,6 +102,9 @@
     playbackTargetPendingChange: null,
     playbackTargetSync: null,
     panelExpanded: false,
+    uiController: null,
+    uiDiscoveredCourses: [],
+    uiScanPage: null,
     uiPosition: null,
     stopSequence: 0,
     resetEpoch: 0,
@@ -350,7 +353,7 @@
       div.className = 'wb-log-entry';
       div.dataset.logKey = entry.key;
       div.textContent = `[${new Date(entry.time).toLocaleTimeString()}] ${entry.text}`;
-      div.style.color = entry.type === 'ok' ? '#1a7f37' : entry.type === 'err' ? '#d1242f' : '#666';
+      div.dataset.type = entry.type;
       state.logBox.appendChild(div);
     }
     state.logEntries = nextEntries;
@@ -432,7 +435,8 @@
 
   function setText(id, text) {
     const el = document.getElementById(id);
-    if (el) el.textContent = text;
+    if (el && el.textContent !== String(text)) el.textContent = text;
+    state.uiController?.schedule();
   }
 
   function setCurrentTask(title) {
@@ -684,11 +688,6 @@
     if (panel) panel.hidden = routeHidden || !state.panelExpanded;
     const assistantButton = document.getElementById('wb-assistant-button');
     if (assistantButton) assistantButton.hidden = routeHidden || state.panelExpanded;
-    const promotion = document.getElementById('wb-promotion');
-    if (promotion) {
-      const hidden = routeHidden || !state.panelExpanded || !PROMOTION_CONFIG.enabled;
-      if (promotion.hidden !== hidden) promotion.hidden = hidden;
-    }
     const control = getStartControl();
     const startButton = document.getElementById('wb-start');
     if (startButton) {
@@ -708,10 +707,15 @@
     const resetButton = document.getElementById('wb-reset');
     if (resetButton) {
       resetButton.disabled = state.resetPending || getRoute() === 'other';
-      resetButton.textContent = state.resetPending ? '正在重置' : state.mode === 'resetting' || state.job?.phase === 'resetting' ? '重试重置' : '重置插件';
+      resetButton.textContent = state.resetPending ? '正在重置' : state.mode === 'resetting' || state.job?.phase === 'resetting' ? '重试重置' : '确认重置';
     }
     const scanButton = document.getElementById('wb-scan');
     if (scanButton) scanButton.disabled = state.resetPending || state.mode === 'resetting' || state.job?.phase === 'resetting';
+    const model = state.uiController?.render();
+    if (assistantButton && model) {
+      assistantButton.dataset.tone = model.home.tone;
+      assistantButton.setAttribute('aria-label', `星卫课堂助手：${model.home.status}，点击展开`);
+    }
   }
 
   function acceptJob(job) {
@@ -1224,486 +1228,186 @@
     return getPlaybackTarget();
   }
 
-  function createPromotion(panel) {
-    if (!PROMOTION_CONFIG.enabled) return null;
-    const layer = document.createElement('div');
-    layer.id = 'wb-promotion';
-    layer.hidden = getRoute() === 'other' || !state.panelExpanded;
-    layer.setAttribute('role', 'group');
-    layer.setAttribute('aria-label', `${PROMOTION_CONFIG.brand} 独立商业服务，非课程平台服务`);
-    const SVG_NS = 'http://www.w3.org/2000/svg';
-    const words = [PROMOTION_CONFIG.brand, PROMOTION_CONFIG.tagline, ...PROMOTION_CONFIG.services]
-      .filter(Boolean);
-    const svg = document.createElementNS(SVG_NS, 'svg');
-    svg.classList.add('wb-promo-svg');
-    svg.setAttribute('focusable', 'false');
-    const defs = document.createElementNS(SVG_NS, 'defs');
-    const path = document.createElementNS(SVG_NS, 'path');
-    const pathId = `wb-promo-path-${Math.random().toString(36).slice(2)}`;
-    path.id = pathId;
-    path.setAttribute('fill', 'none');
-    defs.appendChild(path);
-    svg.appendChild(defs);
+  // Read-only presentation adapter: browsing a view never sends task commands.
+  function assistantTime(value) {
+    const seconds = Math.max(0, Math.floor(Number(value) || 0));
+    return `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
+  }
 
-    const link = document.createElementNS(SVG_NS, 'a');
-    link.classList.add('wb-promo-link');
-    link.setAttribute('href', PROMOTION_CONFIG.url);
-    link.setAttribute('target', '_blank');
-    link.setAttribute('rel', 'noopener noreferrer sponsored');
-    link.setAttribute('aria-label',
-      `${PROMOTION_CONFIG.brand}：${PROMOTION_CONFIG.services.join('、')}（外部商业服务，新标签页打开）`);
-    link.setAttribute('tabindex', '0');
-    const text = document.createElementNS(SVG_NS, 'text');
-    text.classList.add('wb-promo-text');
-    text.setAttribute('font-size', '11');
-    text.setAttribute('font-family', 'PingFang SC, Arial, sans-serif');
-    text.setAttribute('letter-spacing', '0');
-    text.setAttribute('fill', 'currentColor');
-    const textPath = document.createElementNS(SVG_NS, 'textPath');
-    textPath.classList.add('wb-promo-text-path');
-    textPath.setAttribute('href', `#${pathId}`);
-    textPath.setAttribute('startOffset', '0');
-    const motion = document.createElementNS(SVG_NS, 'animate');
-    motion.classList.add('wb-promo-motion');
-    motion.setAttribute('attributeName', 'startOffset');
-    motion.setAttribute('from', '0');
-    motion.setAttribute('to', '0');
-    motion.setAttribute('dur', '100s');
-    motion.setAttribute('calcMode', 'linear');
-    motion.setAttribute('repeatCount', 'indefinite');
-    text.appendChild(textPath);
-    link.appendChild(text);
-    svg.appendChild(link);
-    layer.appendChild(svg);
-
-    const compactLink = document.createElement('a');
-    compactLink.className = 'wb-promo-compact';
-    compactLink.href = PROMOTION_CONFIG.url;
-    compactLink.target = '_blank';
-    compactLink.rel = 'noopener noreferrer sponsored';
-    compactLink.textContent = `${PROMOTION_CONFIG.brand} · ${PROMOTION_CONFIG.services.join(' · ')}`;
-    compactLink.setAttribute('aria-label',
-      `${PROMOTION_CONFIG.brand}：${PROMOTION_CONFIG.services.join('、')}（外部商业服务，新标签页打开）`);
-    layer.appendChild(compactLink);
-
-    panel.appendChild(layer);
-    let hovered = false;
-    let ignoreHoverPauseUntilPointerMoves = false;
-    let wasAway = false;
-    let lastPointerPosition = null;
-    let resumedPointerPosition = null;
-    let compact = false;
-    const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)');
-    const pauseAnimations = () => {
-      if (typeof svg.pauseAnimations === 'function') svg.pauseAnimations();
-      layer.classList.add('is-paused');
-    };
-    const resumeAnimations = () => {
-      if (typeof svg.unpauseAnimations === 'function') svg.unpauseAnimations();
-      layer.classList.remove('is-paused');
-    };
-    const syncPause = () => {
-      const ownerDocument = layer.ownerDocument;
-      const view = ownerDocument?.defaultView;
-      if (!view) {
-        pauseAnimations();
-        return;
-      }
-      const focused = layer.contains(ownerDocument.activeElement);
-      if (layer.hidden || ownerDocument.hidden || compact || reducedMotion?.matches ||
-        (hovered && !ignoreHoverPauseUntilPointerMoves) || focused) pauseAnimations();
-      else resumeAnimations();
-    };
-    const resetInteraction = (suppressStaleHover = false) => {
-      const ownerDocument = layer.ownerDocument;
-      if (!ownerDocument?.defaultView) {
-        pauseAnimations();
-        return;
-      }
-      hovered = false;
-      ignoreHoverPauseUntilPointerMoves = suppressStaleHover;
-      resumedPointerPosition = lastPointerPosition;
-      if (layer.contains(ownerDocument.activeElement) &&
-        typeof ownerDocument.activeElement.blur === 'function') {
-        ownerDocument.activeElement.blur();
-      }
-      syncPause();
-    };
-    layer.addEventListener('pointerover', event => {
-      if (event.target.closest?.('a')) {
-        hovered = true;
-        syncPause();
-      }
-    });
-    layer.addEventListener('pointerout', event => {
-      if (!layer.contains(event.relatedTarget)) {
-        hovered = false;
-        syncPause();
-      }
-    });
-    layer.addEventListener('focusin', syncPause);
-    layer.addEventListener('focusout', syncPause);
-    layer.addEventListener('click', event => {
-      if (event.target.closest?.('a')) {
-        // Native new-tab activation may retain focus without firing a leave event.
-        window.setTimeout(() => resetInteraction(true), 0);
-      }
-    });
-    document.addEventListener('pointermove', event => {
-      lastPointerPosition = { x: event.clientX, y: event.clientY };
-      if (!ignoreHoverPauseUntilPointerMoves) return;
-      if (!resumedPointerPosition) {
-        resumedPointerPosition = lastPointerPosition;
-        return;
-      }
-      if (Math.hypot(event.clientX - resumedPointerPosition.x,
-        event.clientY - resumedPointerPosition.y) > 2) {
-        ignoreHoverPauseUntilPointerMoves = false;
-        syncPause();
-      }
-    }, { passive: true });
-    document.addEventListener('visibilitychange', () => {
-      if (document.hidden) {
-        wasAway = true;
-        pauseAnimations();
-      } else if (wasAway) {
-        wasAway = false;
-        resetInteraction(true);
-      }
-    });
-    window.addEventListener('pageshow', event => {
-      if (event.persisted) resetInteraction(true);
-      else syncPause();
-    });
-    window.addEventListener('focus', () => {
-      if (wasAway) {
-        wasAway = false;
-        resetInteraction(true);
-      } else syncPause();
-    });
-    window.addEventListener('blur', () => {
-      wasAway = true;
-      hovered = false;
-      syncPause();
-    });
-    reducedMotion?.addEventListener('change', syncPause);
-    new MutationObserver(() => {
-      if (layer.hidden) pauseAnimations();
-      else syncPause();
-    }).observe(layer, { attributes: true, attributeFilter: ['hidden'] });
-    syncPause();
-
-    let lastGeometry = '';
-    function renderRibbon() {
-      textPath.replaceChildren();
-      words.forEach((word, index) => {
-        if (index > 0) textPath.appendChild(document.createTextNode(' · '));
-        const span = document.createElementNS(SVG_NS, 'tspan');
-        span.classList.add('wb-promo-word');
-        span.textContent = word;
-        textPath.appendChild(span);
-      });
-      textPath.appendChild(motion);
+  function getAssistantModel() {
+    const job = state.job;
+    const liveCourseKey = getRoute() === 'learn' ? currentCourseKey() : '';
+    const liveItems = liveCourseKey ? getMenuItems() : [];
+    const liveByKey = new Map(liveItems.map(item => [getItemKey(item), item]));
+    const source = job?.candidates?.length ? job.candidates :
+      job?.phase === 'scan-home' ? state.uiDiscoveredCourses : [];
+    const courses = source.map(candidate => ({ ...candidate, live: candidate.courseKey === liveCourseKey }));
+    if (liveCourseKey && !courses.some(c => c.courseKey === liveCourseKey)) {
+      courses.push({ key: liveCourseKey, courseKey: liveCourseKey,
+        title: getDisplayedCourseTitle() || '当前课程', status: 'current', records: {}, live: true });
     }
-    renderRibbon();
-    return {
-      syncVisibility(visible) {
-        if (visible) resetInteraction();
-        else pauseAnimations();
-      },
-      constraints(viewport) {
-        compact = viewport.width < 406 || viewport.height < 180;
-        layer.dataset.compact = String(compact);
-        panel.style.setProperty('--wb-shell-height', compact ? '56px' : '64px');
-        syncPause();
-        return compact ? { x: 13, top: 8, bottom: 48 } : { x: 32, top: 32, bottom: 32 };
-      },
-      layout({ width, height }) {
-        if (!width || !height) return;
-        if (compact) {
-          compactLink.hidden = false;
-          return;
-        }
-        compactLink.hidden = true;
-        width = panel.clientWidth || width;
-        height = panel.clientHeight || height;
-        const geometry = `${width}:${height}`;
-        if (geometry === lastGeometry) return;
-        lastGeometry = geometry;
-        const side = 16;
-        const left = -side, right = width + side, top = -side, bottom = height + side;
-        const radius = Math.min(28, Math.max(8, Math.min((right - left) / 4, (bottom - top) / 4)));
-        const horizontal = right - left - 2 * radius;
-        const vertical = bottom - top - 2 * radius;
-        const estimatedPerimeter = 2 * (horizontal + vertical) + 2 * Math.PI * radius;
-        const loop = `M ${left + radius} ${top} H ${right - radius} ` +
-          `A ${radius} ${radius} 0 0 1 ${right} ${top + radius} V ${bottom - radius} ` +
-          `A ${radius} ${radius} 0 0 1 ${right - radius} ${bottom} H ${left + radius} ` +
-          `A ${radius} ${radius} 0 0 1 ${left} ${bottom - radius} V ${top + radius} ` +
-          `A ${radius} ${radius} 0 0 1 ${left + radius} ${top} Z`;
-        path.setAttribute('d', `${loop} ${loop}`);
-        const perimeter = typeof path.getTotalLength === 'function'
-          ? path.getTotalLength() / 2 : estimatedPerimeter;
-        svg.setAttribute('viewBox', `-32 -32 ${width + 64} ${height + 64}`);
-        motion.setAttribute('to', String(perimeter));
-        motion.setAttribute('dur', `${Math.max(80, Math.round(perimeter / 20))}s`);
-        syncPause();
+    for (const course of courses) {
+      if (!course.live) continue;
+      // Preserve a saved directory while the actual page is still loading.
+      course.directoryStale = Boolean(course.directory && !liveItems.length);
+      if (liveItems.length) {
+        course.directory = getDirectorySnapshot(liveItems);
+        course.directory.items = course.directory.items.map(item => ({ ...item,
+          locatable: true, observedCompleted: isPageCompletedItem(liveByKey.get(item.key)) }));
       }
-    };
+      if (state.processedCourseKey === liveCourseKey) course.records = {
+        ...course.records, ...Object.fromEntries(state.processedItems)
+      };
+    }
+    const candidate = job?.candidates?.[job.targetIndex];
+    const activeCourseKey = candidate?.courseKey || (job?.running ? candidate?.key : '') || liveCourseKey;
+    const activeResourceKey = candidate?.currentResource?.key || '';
+    const mediaEl = liveCourseKey === activeCourseKey ? getActiveMediaEl() : null;
+    const media = mediaEl && Number.isFinite(mediaEl.duration) && mediaEl.duration > 0
+      ? { position: Number(mediaEl.currentTime) || 0, duration: Number(mediaEl.duration) } : null;
+    const alerts = job ? jobManualItems(job) : state.manualItems;
+    const allRecords = courses.flatMap(c => Object.values(c.records || {}));
+    const running = Boolean(job?.running || state.running);
+    const resetPending = state.resetPending || state.mode === 'resetting' || job?.phase === 'resetting';
+    const legacyTask = document.getElementById('wb-current')?.textContent || '';
+    const legacyStatus = document.getElementById('wb-status')?.textContent || '';
+    const home = { status: '准备就绪', title: '从课程扫描开始', subtitle: '自动识别正在上的课程与音视频',
+      caption: `播放目标 ${getPlaybackTarget()}% · 可在设置中调整`, notice: '', tone: 'neutral',
+      showStart: true, showStop: false, showResults: false, resetRetry: false, progress: null };
+    if (running) {
+      home.tone = 'active'; home.showStart = false; home.showStop = isTaskPage() || state.startPending || state.running;
+      home.caption = ''; home.title = candidate?.title || '正在准备课程'; home.subtitle = legacyTask;
+      const phase = job?.phase;
+      if (phase === 'go-agent' || phase === 'entry-home') {
+        home.status = '正在准备'; home.title = phase === 'go-agent' ? '正在进入网站首页' : '正在打开全部课表';
+      } else if (phase === 'scan-home') {
+        home.status = '正在扫描课程'; home.title = state.uiScanPage ? `正在读取第 ${state.uiScanPage} 页课表` : '正在读取课表';
+        home.subtitle = `已发现 ${state.uiDiscoveredCourses.length} 门正在上的课程`;
+      } else if (phase === 'opening') {
+        home.status = job?.targetPurpose === 'inspect' ? '正在打开统计页' : '正在打开课程';
+        home.subtitle = '等待课程页面打开';
+        if (job.openDeadline) home.caption = `等待剩余 ${Math.max(0, Math.ceil((job.openDeadline - Date.now()) / 1000))} 秒`;
+      } else if (phase === 'course' && job?.targetPurpose === 'inspect') {
+        home.status = '正在统计音视频'; home.subtitle = '读取目录期间暂停媒体';
+        const completed = courses.filter(c => Number.isInteger(c.total)).length;
+        if (courses.length) home.progress = { label: '已完成统计', text: `${completed} / ${courses.length} 门`, percent: completed / courses.length * 100 };
+      } else if (phase === 'course') {
+        home.status = '正在学习';
+        const resource = candidate?.directory?.items?.find(i => i.key === activeResourceKey);
+        home.subtitle = resource ? `${resource.title} · ${{ video: '视频', audio: '音频', media: '音视频' }[resource.mediaType] || '资源'}` : legacyTask;
+        if (media) home.progress = { label: '当前播放', text: `${assistantTime(media.position)} / ${assistantTime(media.duration)}`, percent: media.position / media.duration * 100 };
+        home.caption = `播放目标 ${job.targetPercent ?? getPlaybackTarget()}% · 完成状态由平台另行确认`;
+        if (/核对|复核|刷新/.test(legacyTask) || /verify|refresh/.test(candidate?.coursePhase || '')) {
+          home.status = '正在核对平台状态'; home.subtitle = legacyTask; home.progress = null;
+        } else if (candidate?.currentResource?.stage === 'opening' || /正在打开：|正在切换/.test(legacyTask)) {
+          home.status = '正在切换资源'; home.subtitle = legacyTask || candidate?.currentResource?.title || '等待目标资源就绪'; home.progress = null;
+        } else if (/等待|加载|播放器尚未/.test(legacyTask)) { home.status = '等待资源就绪'; home.subtitle = legacyTask; }
+      } else { home.status = '正在选择课程'; home.subtitle = legacyTask; }
+      if (candidate?.status === 'retry') {
+        home.status = '等待稍后重试'; home.tone = 'warning'; home.progress = null;
+        home.subtitle = '暂未完成的音视频将按现有策略重试';
+        if (candidate.retryAt) home.caption = `${Math.max(0, Math.ceil((candidate.retryAt - Date.now()) / 1000))} 秒后重试`;
+      }
+      if (state.routeRecoveryPending || job?.interruption?.status === 'navigating' || /恢复/.test(legacyStatus)) {
+        home.status = '正在自动恢复'; home.tone = 'warning'; home.progress = null; home.subtitle = legacyTask;
+      }
+      if (job?.running && !isTaskPage()) {
+        home.status = '任务在其他标签页'; home.subtitle = '请在执行任务的页面暂停或继续'; home.showStop = false;
+      }
+    } else if (job?.phase === 'finished') {
+      const allConfirmed = courses.length > 0 && courses.every(c => c.status === 'complete' || c.status === 'completed');
+      home.status = alerts.length ? '本轮处理结束' : allConfirmed ? '音视频已确认完成' : '本轮处理结束';
+      home.title = alerts.length ? `还有 ${alerts.length} 项需要检查` : allConfirmed ? '本轮音视频已处理完毕' : courses.length ? '请查看各课程处理结果' : '没有发现可处理的课程';
+      home.subtitle = '文档、考试和作业仍需自行处理'; home.caption = '';
+      home.tone = alerts.length ? 'warning' : allConfirmed ? 'success' : 'neutral'; home.showStart = false; home.showResults = true;
+    } else if (['paused', 'interrupted', 'manual'].includes(job?.phase)) {
+      home.status = job.phase === 'paused' ? '已暂停' : job.phase === 'interrupted' ? '任务已中断' : '需要你处理';
+      home.title = candidate?.title || (job.phase === 'paused' ? '任务已暂停' : '自动操作已停止');
+      home.subtitle = job.reason || '已有任务记录会在继续时核对'; home.caption = '';
+      home.tone = job.phase === 'paused' ? 'neutral' : 'warning';
+      if (job.reason) home.notice = job.reason;
+    }
+    if (!running && !resetPending && ['manual', 'paused'].includes(state.mode) && !['finished', 'manual', 'paused', 'interrupted'].includes(job?.phase)) {
+      home.status = state.mode === 'manual' ? '需要你处理' : '已暂停';
+      home.title = '本页自动操作已停止'; home.subtitle = state.manualNotice || '继续时会先核对已有任务记录';
+      home.caption = ''; home.notice = state.manualNotice || ''; home.tone = state.mode === 'manual' ? 'warning' : 'neutral';
+    }
+    if (state.startPending) {
+      home.status = '正在开始'; home.title = '正在准备任务'; home.subtitle = '正在确认任务状态';
+      home.showStart = false; home.showStop = true; home.showResults = false; home.progress = null;
+    }
+    if (state.pausePending) { home.status = '正在暂停'; home.title = '本页媒体已停止'; home.subtitle = '等待后台确认暂停'; home.showStart = false; home.showStop = true; home.progress = null; }
+    if (state.storageFailed) {
+      home.status = '保存失败'; home.title = '自动操作已停止'; home.subtitle = '任务状态未能可靠保存';
+      home.notice = state.manualNotice || job?.reason || '请检查扩展状态后再继续。'; home.tone = 'error'; home.showStop = false; home.showStart = false; home.showResults = false; home.progress = null;
+    }
+    if (resetPending) {
+      home.status = state.resetPending ? '正在重置' : '重置尚未完成'; home.title = state.resetPending ? '正在停止旧任务' : '部分页面未确认停止';
+      home.subtitle = job?.reason || '正在核对页面与本地记录'; home.caption = ''; home.progress = null;
+      home.showStart = false; home.showStop = false; home.showResults = false; home.resetRetry = !state.resetPending; home.tone = 'warning';
+    }
+    if (getRoute() === 'other') home.showStart = false;
+    return { job, tabId: state.tabId, courses, activeCourseKey, activeResourceKey, media, target: getPlaybackTarget(), home,
+      alerts, resetPending, logCount: state.logEntries.length,
+      targetReached: allRecords.filter(r => r.targetReached).length, confirmed: allRecords.filter(r => r.confirmed).length };
   }
 
   function injectUI() {
     if (document.getElementById('wb-study-ui')) return;
 
-    const style = document.createElement('style');
-    style.textContent = `
-      #wb-study-ui{
-        position:fixed;right:18px;top:90px;width:340px;z-index:999999;
-        max-width:calc(min(100vw,var(--wb-visible-width,100vw)) - 32px);
-        max-height:calc(var(--wb-visible-height,100vh) - var(--wb-shell-height,28px));
-        display:flex;flex-direction:column;
-        isolation:isolate;overflow:visible;
-        background:#fff;border:1px solid #e6e6e6;border-radius:12px;
-        box-shadow:0 8px 28px rgba(0,0,0,.16);font:13px/1.4 PingFang SC,Arial,sans-serif;color:#222;
-        user-select:none;
+    const getExtensionUrl = globalThis.chrome?.runtime?.getURL;
+    const imageUrl = typeof getExtensionUrl === 'function'
+      ? getExtensionUrl.call(globalThis.chrome.runtime, 'assets/floating-assistant.png') : '';
+    let logsOpened = false;
+    const controller = globalThis.XinweiAssistantUI.create({
+      getModel: getAssistantModel, imageUrl, promotion: PROMOTION_CONFIG,
+      getShell: () => ({ expanded: state.panelExpanded, ...state.uiPosition }),
+      onRestoreShell: shell => {
+        if (Number.isFinite(shell.left) && Number.isFinite(shell.top)) state.uiPosition = { left: shell.left, top: shell.top };
+        setPanelExpanded(shell.expanded === true);
+        repositionWithinVisibleViewport();
+      },
+      onReset: () => resetPlugin({ confirmed: true }),
+      onLocate: (courseKey, itemKey) => {
+        if (getRoute() !== 'learn' || currentCourseKey() !== courseKey) return;
+        const item = getMenuItems().find(el => getItemKey(el) === itemKey);
+        if (!item) return;
+        const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+        item.scrollIntoView({ block: 'center', behavior: reduced ? 'instant' : 'smooth' });
+        log(`已定位到：${itemTitle(item)}；请由你点击页面中的课程条目`, 'info');
+      },
+      onView: view => {
+        if (view === 'logs') {
+          renderLogEntries(state.logEntries);
+          if (!logsOpened) state.logBox.scrollTop = state.logBox.scrollHeight;
+          logsOpened = true;
+        }
       }
-      #wb-study-ui[hidden]{display:none!important}
-      #wb-assistant-button{
-        position:fixed;right:18px;top:90px;z-index:1000000;
-        box-sizing:border-box;width:56px;height:56px;padding:0;overflow:hidden;
-        border:1px solid rgba(255,255,255,.9);border-radius:50%;background:#fff;
-        box-shadow:0 4px 16px rgba(0,0,0,.2);cursor:grab;touch-action:none;
-      }
-      #wb-assistant-button[hidden]{display:none!important}
-      #wb-assistant-button img{display:block;width:100%;height:100%;object-fit:cover;pointer-events:none}
-      #wb-assistant-button:active{cursor:grabbing}
-      #wb-assistant-button:focus-visible{outline:2px solid #005eff;outline-offset:3px}
-      #wb-promotion{
-        position:absolute;inset:0;z-index:1;overflow:visible;pointer-events:none;
-      }
-      #wb-promotion[hidden]{display:none!important}
-      #wb-promotion .wb-promo-svg{
-        position:absolute;left:-32px;top:-32px;
-        width:calc(100% + 64px);height:calc(100% + 64px);overflow:visible;
-        color:#40536d;pointer-events:none;
-      }
-      #wb-promotion .wb-promo-link{
-        color:inherit;pointer-events:visiblePainted;cursor:pointer;text-decoration:none;
-      }
-      #wb-promotion .wb-promo-text{
-        paint-order:stroke;stroke:rgba(255,255,255,.92);stroke-width:4px;
-      }
-      #wb-promotion .wb-promo-word{
-        transition:font-size .16s ease,fill .16s ease;
-      }
-      #wb-promotion .wb-promo-word:hover,
-      #wb-promotion .wb-promo-link:focus-visible .wb-promo-word{
-        font-size:13px;fill:#1557b0;
-      }
-      #wb-promotion .wb-promo-link:focus-visible{outline:2px solid #005eff;outline-offset:3px}
-      #wb-promotion .wb-promo-compact{
-        display:none;position:absolute;left:50%;top:100%;margin-top:6px;
-        transform:translateX(-50%);box-sizing:border-box;max-width:calc(100vw - 26px);
-        padding:2px 5px;background:rgba(255,255,255,.94);border-radius:3px;
-        color:#40536d;font:11px/14px "PingFang SC",Arial,sans-serif;
-        white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-decoration:none;
-        pointer-events:auto;cursor:pointer;
-      }
-      #wb-promotion .wb-promo-compact:hover,
-      #wb-promotion .wb-promo-compact:focus-visible{color:#1557b0;text-decoration:underline}
-      #wb-promotion[data-compact="true"] .wb-promo-svg{display:none}
-      #wb-promotion[data-compact="true"] .wb-promo-compact{display:block}
-      @media(prefers-reduced-motion:reduce){
-        #wb-promotion .wb-promo-word{transition:none}
-      }
-      #wb-study-ui .hd{
-        flex:0 0 auto;
-        padding:10px 12px;background:#005eff;color:#fff;border-radius:12px 12px 0 0;
-        display:flex;justify-content:space-between;align-items:center;font-weight:700;cursor:grab;touch-action:none;
-      }
-      #wb-study-ui .hd:active{cursor:grabbing}
-      #wb-study-ui .bd{min-height:0;overflow-y:auto;overscroll-behavior:contain;padding:12px}
-      #wb-study-ui .btn{
-        width:100%;border:none;border-radius:10px;padding:9px 10px;margin-top:8px;cursor:pointer;font-weight:700;
-      }
-      #wb-study-ui .scan{background:#f3f3f3;color:#333}
-      #wb-study-ui .start{background:#005eff;color:#fff}
-      #wb-study-ui .stop{background:#ff8200;color:#fff}
-      #wb-study-ui .btn:disabled{opacity:.5;cursor:not-allowed}
-      #wb-study-ui .kv{display:flex;justify-content:space-between;gap:8px;font-size:12px;margin:4px 0;color:#444}
-      #wb-study-ui .playback-target{align-items:center;min-height:30px}
-      #wb-study-ui .target-value{display:inline-flex;align-items:center;gap:4px}
-      #wb-study-ui .playback-target input{
-        box-sizing:border-box;width:72px;height:28px;border:1px solid #ccc;border-radius:6px;
-        padding:3px 5px;background:#fff;color:#222;font:inherit;text-align:right;
-      }
-      #wb-study-ui .playback-target input:focus-visible{outline:2px solid #005eff;outline-offset:1px}
-      #wb-study-ui .log{
-        margin-top:8px;height:180px;overflow:auto;background:#fafafa;border:1px solid #eee;border-radius:10px;padding:8px;font-size:11px;
-      }
-      #wb-study-ui .log-new{
-        width:100%;margin-top:8px;padding:7px 9px;border:1px solid #bfd4ff;border-radius:8px;
-        background:#f2f7ff;color:#005eff;font-size:11px;font-weight:700;cursor:pointer;text-align:left;
-      }
-      #wb-study-ui .log-new[hidden]{display:none}
-      #wb-study-ui .log-new.is-urgent{
-        border-color:#f0b35a;background:#fff4e5;color:#8a4b00;
-      }
-      #wb-study-ui .section{
-        margin-top:10px;padding-top:10px;border-top:1px solid #efefef;
-      }
-      #wb-study-ui .section-title{
-        display:flex;justify-content:space-between;align-items:center;
-        font-size:12px;font-weight:700;color:#333;margin-bottom:6px;
-      }
-      #wb-study-ui .section-meta{
-        font-size:11px;color:#666;font-weight:400;
-      }
-      #wb-study-ui .current-task{
-        margin:8px 0;padding:8px 10px;background:#f5f8ff;border:1px solid #dbe7ff;
-        border-radius:10px;font-size:12px;color:#333;
-      }
-      #wb-study-ui .current-task strong{
-        display:block;margin-top:3px;color:#005eff;font-size:12px;
-        white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
-      }
-      #wb-study-ui details{
-        margin-top:8px;border-top:1px solid #efefef;padding-top:8px;
-      }
-      #wb-study-ui details summary{
-        cursor:pointer;color:#666;font-size:12px;user-select:none;
-      }
-      #wb-study-ui .manual-list{
-        margin:6px 0 0;padding-left:18px;color:#b42318;font-size:11px;font-weight:500;
-        max-height:100px;overflow:auto;
-      }
-      #wb-study-ui .manual-list li{margin:4px 0;overflow-wrap:anywhere}
-      #wb-study-ui .manual-empty{
-        color:#777;font-size:11px;margin-top:5px;
-      }
-      #wb-study-ui .notice{
-        margin-top:8px;padding:8px 10px;border-radius:10px;
-        background:#fff4e5;border:1px solid #ffd7a0;color:#8a4b00;font-size:11px;
-      }
-      #wb-study-ui .dir-list{
-        max-height:220px;overflow:auto;background:#fafafa;border:1px solid #eee;border-radius:10px;padding:6px;
-      }
-      #wb-study-ui .dir-item{
-        display:block;width:100%;border:none;background:#fff;border-radius:8px;
-        padding:7px 8px;margin:4px 0;text-align:left;font-size:12px;line-height:1.35;
-        color:#333;cursor:pointer;border:1px solid #ececec;
-      }
-      #wb-study-ui .dir-item:hover{border-color:#005eff;background:#f5f8ff}
-      #wb-study-ui .dir-item small{
-        display:block;margin-top:3px;color:#7a7a7a;font-size:11px;
-      }
-      #wb-study-ui .dir-item.is-pending{
-        border-color:#bfd4ff;background:#f6f9ff;
-      }
-      #wb-study-ui .dir-badge{
-        display:inline-flex;align-items:center;justify-content:center;
-        min-width:46px;height:20px;padding:0 6px;margin-left:8px;border-radius:999px;
-        font-size:11px;font-weight:700;
-      }
-      #wb-study-ui .dir-badge.pending{background:#e8f1ff;color:#005eff}
-      #wb-study-ui .dir-badge.done{background:#ebf8ee;color:#1a7f37}
-      #wb-study-ui .dir-badge.unknown{background:#fff4e5;color:#8a4b00}
-      #wb-study-ui .dir-head{
-        display:flex;justify-content:space-between;align-items:flex-start;gap:8px;
-      }
-      #wb-study-ui .dir-empty{
-        font-size:12px;color:#888;padding:6px 4px;
-      }
-      #wb-study-ui .mini{
-        display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;
-        padding:0;border:0;border-radius:4px;background:transparent;color:inherit;
-        font:inherit;font-size:20px;line-height:1;cursor:pointer;
-      }
-      #wb-study-ui .mini:hover{background:rgba(255,255,255,.16)}
-      #wb-study-ui .mini:focus-visible{outline:2px solid #fff;outline-offset:1px}
-    `;
-    document.head.appendChild(style);
-
-    const box = document.createElement('div');
-    box.id = 'wb-study-ui';
+    });
+    state.uiController = controller;
+    const box = controller.element;
     box.hidden = getRoute() === 'other' || !state.panelExpanded;
-    box.innerHTML = `
-      <div class="hd" id="wb-drag">
-        <span>课程学习助手</span>
-        <button class="mini" id="wb-min" type="button" title="收起" aria-label="收起课程学习助手">−</button>
-      </div>
-      <div class="bd" id="wb-body">
-        <div class="kv"><span>状态</span><span id="wb-status">未开始</span></div>
-        <div class="kv"><span>课程任务</span><span id="wb-job-summary">尚未开始</span></div>
-        <div class="kv"><span>当前播放位置</span><span id="wb-progress">-</span></div>
-        <div class="current-task">
-          <span>当前任务</span>
-          <strong id="wb-current">尚未开始</strong>
-        </div>
-        <div class="kv"><span>当前页面</span><span id="wb-course">尚未识别</span></div>
-        <div class="kv"><span>页面考核点（仅供参考）</span><span id="wb-course-progress">未识别</span></div>
-        <div class="kv"><span>本次已完整播放</span><span id="wb-count">0</span></div>
-        <div class="kv"><span>页面已标记完成的音视频</span><span id="wb-confirmed">0</span></div>
-        <div class="kv"><span>需人工处理</span><span id="wb-manual">0</span></div>
-        <div class="notice" id="wb-notice" style="display:none"></div>
-
-        <label class="kv playback-target" for="wb-playback-target">
-          <span>播放目标</span>
-          <span class="target-value">
-            <input id="wb-playback-target" type="number" min="80" max="100" step="1" value="100"
-              title="播放目标百分比" aria-label="播放目标百分比">
-            <span aria-hidden="true">%</span>
-          </span>
-        </label>
-        <button class="btn start" id="wb-start">开始</button>
-        <button class="btn stop" id="wb-stop">暂停</button>
-
-        <details class="section">
-          <summary class="section-title">
-            <span>音视频目录</span>
-            <span class="section-meta">待处理 <span id="wb-pending-count">—</span> / 音视频 <span id="wb-video-count">—</span></span>
-          </summary>
-          <div class="dir-list" id="wb-video-list">
-            <div class="dir-empty">暂未识别到学习目录</div>
-          </div>
-        </details>
-
-        <div class="section">
-          <div class="section-title">
-            <span>人工提醒</span>
-            <span class="section-meta">共 <span id="wb-manual-count">0</span> 项</span>
-          </div>
-          <div id="wb-manual-list" class="manual-empty" aria-live="polite">暂未发现需要人工处理的项目</div>
-        </div>
-
-        <button class="btn scan" id="wb-scan">查看最新目录</button>
-        <button class="btn scan" id="wb-reset">重置插件</button>
-
-        <button class="log-new" id="wb-log-new" type="button" aria-live="polite" hidden></button>
-        <div class="log" id="wb-log"></div>
-      </div>
-    `;
     document.body.appendChild(box);
-    const promotion = createPromotion(box);
     const assistantButton = document.createElement('button');
     assistantButton.id = 'wb-assistant-button';
     assistantButton.type = 'button';
-    assistantButton.setAttribute('aria-label', '展开课程学习助手');
-    assistantButton.setAttribute('aria-expanded', 'false');
-    assistantButton.title = '展开课程学习助手';
+    assistantButton.setAttribute('aria-label', '展开星卫课堂助手');
+    assistantButton.setAttribute('aria-expanded', String(state.panelExpanded));
+    assistantButton.title = '展开星卫课堂助手';
     assistantButton.hidden = getRoute() === 'other' || state.panelExpanded;
     const assistantImage = document.createElement('img');
     assistantImage.alt = '';
     assistantImage.draggable = false;
-    const getExtensionUrl = globalThis.chrome?.runtime?.getURL;
-    if (typeof getExtensionUrl === 'function') {
-      assistantImage.src = getExtensionUrl.call(globalThis.chrome.runtime, 'assets/floating-assistant.png');
-    }
+    if (imageUrl) assistantImage.src = imageUrl;
     assistantButton.appendChild(assistantImage);
     document.body.appendChild(assistantButton);
     const targetInput = box.querySelector('#wb-playback-target');
     targetInput.addEventListener('change', () => {
-      savePlaybackTarget(targetInput.value).catch(() => {
+      controller.feedback('正在保存…');
+      savePlaybackTarget(targetInput.value).then(saved => {
+        controller.feedback(saved ? '已保存' : '本页已应用，扩展存储不可用', !saved);
+      }).catch(() => {
+        controller.feedback('保存失败，本页仍使用当前设置', true);
         log('播放目标保存失败，本页仍使用当前设置', 'err');
       });
     });
@@ -1770,7 +1474,7 @@
 
     function readPanelPosition() {
       if (state.uiPosition) return { ...state.uiPosition };
-      const size = getElementSize(box, { width: 342, height: 0 });
+      const size = getElementSize(box, { width: 310, height: 0 });
       const left = box.style.left ? parseFloat(box.style.left) :
         window.innerWidth - size.width - 18;
       const top = box.style.top ? parseFloat(box.style.top) : 90;
@@ -1779,14 +1483,12 @@
 
     function applyPanelPosition(left, top) {
       const viewport = getVisibleViewport();
-      const margins = promotion?.constraints(viewport) || 8;
-      const size = getElementSize(box, { width: 342, height: Math.max(0, viewport.height - 26) });
-      const position = keepBoxInViewport(left, top, size.width, size.height, margins);
+      const size = getElementSize(box, { width: 310, height: Math.max(0, viewport.height - 26) });
+      const position = keepBoxInViewport(left, top, size.width, size.height);
       box.style.left = `${position.left}px`;
       box.style.top = `${position.top}px`;
       box.style.right = 'auto';
       state.uiPosition = position;
-      promotion?.layout(size);
 
       const buttonSize = getElementSize(assistantButton, { width: 56, height: 56 });
       const buttonPosition = keepBoxInViewport(
@@ -1806,9 +1508,9 @@
       assistantButton.style.left = `${position.left}px`;
       assistantButton.style.top = `${position.top}px`;
       assistantButton.style.right = 'auto';
-      const panelSize = getElementSize(box, { width: 342, height: 0 });
+      const panelSize = getElementSize(box, { width: 310, height: 0 });
       const viewport = getVisibleViewport();
-      const margin = promotion?.constraints(viewport)?.x || 8;
+      const margin = 8;
       const panelLeft = position.left + buttonSize.width - panelSize.width;
       state.uiPosition = {
         left: Math.min(Math.max(viewport.left + margin, panelLeft),
@@ -1822,11 +1524,11 @@
       const position = readPanelPosition();
       state.panelExpanded = expanded;
       assistantButton.setAttribute('aria-expanded', String(expanded));
-      assistantButton.setAttribute('aria-label', expanded ? '课程学习助手已展开' : '展开课程学习助手');
-      assistantButton.title = expanded ? '课程学习助手已展开' : '展开课程学习助手';
+      assistantButton.setAttribute('aria-label', expanded ? '星卫课堂助手已展开' : '展开星卫课堂助手');
+      assistantButton.title = expanded ? '星卫课堂助手已展开' : '展开星卫课堂助手';
       updateTaskControls();
-      promotion?.syncVisibility?.(expanded);
       if (expanded) applyPanelPosition(position.left, position.top);
+      controller.save();
     }
 
     let activeDrag = null;
@@ -1873,6 +1575,7 @@
       const finished = activeDrag;
       activeDrag = null;
       if (!canceled && finished.kind === 'assistant' && !finished.moved) setPanelExpanded(true);
+      if (finished.moved) controller.save();
     }
 
     document.addEventListener('pointerup', event => endDrag(event));
@@ -1913,7 +1616,7 @@
     window.addEventListener('resize', repositionWithinVisibleViewport);
     window.visualViewport?.addEventListener('resize', scheduleViewportReposition);
     window.visualViewport?.addEventListener('scroll', scheduleViewportReposition);
-    if (promotion && typeof window.ResizeObserver === 'function') {
+    if (typeof window.ResizeObserver === 'function') {
       let lastSize = '';
       new window.ResizeObserver(() => {
         if (box.hidden) return;
@@ -1929,7 +1632,7 @@
     box.querySelector('#wb-scan').addEventListener('click', scanDirectory);
     box.querySelector('#wb-start').addEventListener('click', start);
     box.querySelector('#wb-stop').addEventListener('click', () => stop());
-    box.querySelector('#wb-reset').addEventListener('click', resetPlugin);
+    controller.render();
   }
 
   function getMenuItems(root = null) {
@@ -2355,7 +2058,8 @@
         const seconds = getDurationSeconds(item);
         return {
           key: getItemKey(item), title: itemTitle(item), mediaType: getDirectoryMediaType(item),
-          durationSeconds: Number.isFinite(seconds) ? seconds : null
+          durationSeconds: Number.isFinite(seconds) ? seconds : null,
+          chapterTitle: getChapterTitle(getChapterRoot(item))
         };
       })
     };
@@ -2512,9 +2216,11 @@
   async function scanHomeCourses(epoch) {
     await goToHomePageNumber(1, epoch);
     const candidates = [], seen = new Set(), signatures = new Set();
+    state.uiDiscoveredCourses = [];
     while (true) {
       assertRunning(epoch);
       const page = getHomePageNumber();
+      state.uiScanPage = page;
       const signature = homeCardsSignature();
       if (state.homePageTransition || pageLoading() || !page || !signature) {
         throw new RecoverableError('课表正在更新，稍后重新扫描', 'home-loading');
@@ -2527,6 +2233,8 @@
         if (seen.has(candidate.key)) throw new Error(`课程名称重复，不能区分：${candidate.title}`);
         seen.add(candidate.key);
         candidates.push(candidate);
+        state.uiDiscoveredCourses = candidates.slice();
+        state.uiController?.schedule();
       }
       const next = document.querySelector('.el-pagination .btn-next');
       if (!next) {
@@ -2801,7 +2509,7 @@
       'h2'
     ];
     for (const selector of selectors) {
-      const el = document.querySelector(selector);
+      const el = [...document.querySelectorAll(selector)].find(node => !node.closest('#wb-study-ui'));
       const text = compactText(el && (el.innerText || el.textContent));
       if (text && !/课程监督助手|目录|课程章节/.test(text)) return text.slice(0, 80);
     }
@@ -4501,9 +4209,9 @@
     }
   }
 
-  async function resetPlugin() {
+  async function resetPlugin(options = {}) {
     if (state.resetPending || getRoute() === 'other') return;
-    if (!window.confirm('将停止当前任务，清除本地任务、断点、课程统计、日志和错误记录。下次开始会回到课程首页重新扫描。网站登录和学习进度不会删除。确定重置吗？')) return;
+    if (options.confirmed !== true && !window.confirm('将停止当前任务，清除本地任务、断点、课程统计、日志和错误记录。下次开始会回到课程首页重新扫描。网站登录和学习进度不会删除。确定重置吗？')) return;
     const request = {};
     state.resetRequest = request;
     state.resetPending = true;
@@ -4681,6 +4389,17 @@
     }
   });
   setInterval(syncSharedJob, 1000);
+  setInterval(() => {
+    if (state.panelExpanded || state.job?.running) {
+      const model = state.uiController?.render();
+      const button = document.getElementById('wb-assistant-button');
+      if (button && model) {
+        const home = model.home;
+        button.dataset.tone = home.tone;
+        button.setAttribute('aria-label', `星卫课堂助手：${home.status}，点击展开`);
+      }
+    }
+  }, 1000);
   setTimeout(syncSharedJob, 0);
 
   window.__wbStudyTest = {

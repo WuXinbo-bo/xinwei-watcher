@@ -1,3 +1,4 @@
+/* Real extension rendering on synthetic pages; no real account or course task. */
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const os = require('node:os');
@@ -7,8 +8,7 @@ const { chromium } = require('playwright');
 async function main() {
   const root = path.resolve(__dirname, '..');
   const profile = await fs.mkdtemp(path.join(os.tmpdir(), 'xinwei-ui-smoke-'));
-  const artifacts = process.env.UI_ARTIFACTS_DIR ||
-    await fs.mkdtemp(path.join(os.tmpdir(), 'xinwei-ui-results-'));
+  const artifacts = process.env.UI_ARTIFACTS_DIR || await fs.mkdtemp(path.join(os.tmpdir(), 'xinwei-ui-results-'));
   await fs.mkdir(artifacts, { recursive: true });
   const context = await chromium.launchPersistentContext(profile, {
     headless: true,
@@ -16,146 +16,130 @@ async function main() {
     args: [`--disable-extensions-except=${root}`, `--load-extension=${root}`],
     viewport: { width: 1280, height: 900 }
   });
+  const errors = [], checks = [];
   try {
-    const worker = context.serviceWorkers()[0] ||
-      await context.waitForEvent('serviceworker', { timeout: 10000 });
+    const worker = context.serviceWorkers()[0] || await context.waitForEvent('serviceworker');
     assert.match(worker.url(), /^chrome-extension:\/\/.*\/background\.js$/);
     await context.route('https://www.beeline-ai.com/**', route => route.fulfill({
       contentType: 'text/html',
-      body: '<!doctype html><meta charset="utf-8"><title>Local UI Fixture</title>' +
-        '<style>body{margin:0;background:#f2f5fa;font:14px Arial}' +
-        'main{padding:32px;color:#435065}</style><main>Local Course UI Fixture</main>'
-    }));
-    await context.route('https://88cf.scxai.top/**', route => route.fulfill({
-      contentType: 'text/html', body: '<!doctype html><title>External Link Fixture</title>'
+      body: '<!doctype html><meta charset="utf-8"><title>本地 UI 测试 · 示例数据</title>' +
+        '<style>body{margin:0;background:#f2f5fa;font:14px sans-serif;color:#435065}main{padding:32px}</style>' +
+        '<main><h1>本地 UI 测试 · 示例数据</h1><p>此页面不连接真实学习数据。</p><div class="course-name">临床护理基础</div>' +
+        '<div class="sub-menu-area"><ul class="el-menu"><li class="el-sub-menu is-opened" aria-expanded="true">' +
+        '<div class="el-sub-menu__title">第一章 · 基础理论</div><ul>' +
+        ['护理学导论', '沟通与关怀', '生命体征评估'].map((name, i) => '<li class="el-menu-item"><span class="lecture-title">' + name +
+          '</span><i class="' + (i === 1 ? 'audio' : 'video') + '-icon"></i><div class="video-duration">10 分 00 秒</div><span class="lecture-status"><i class="unStart-icon"></i></span></li>').join('') +
+        '</ul></li></ul></div><video></video></main>'
     }));
     const page = await context.newPage();
-    await page.goto('https://www.beeline-ai.com/myBank/courseResearch');
-    const button = page.locator('#wb-assistant-button');
-    const panel = page.locator('#wb-study-ui');
-    const promo = page.locator('#wb-promotion');
+    page.on('pageerror', error => errors.push(error.message));
+    const cdp = await context.newCDPSession(page), contexts = [];
+    cdp.on('Runtime.executionContextCreated', event => contexts.push(event.context));
+    await cdp.send('Runtime.enable');
+    await page.goto('https://www.beeline-ai.com/student/#/courseInfo/learn/courseWare/course-1/video/resource-1?classId=class-1');
+    const button = page.locator('#wb-assistant-button'), panel = page.locator('#wb-study-ui');
     await button.waitFor();
+    const ext = contexts.find(c => c.origin.startsWith('chrome-extension://'));
+    assert.ok(ext, 'extension isolated world exists');
+    const evaluate = async expression => {
+      const result = await cdp.send('Runtime.evaluate', { expression, contextId: ext.id, returnByValue: true, awaitPromise: true });
+      if (result.exceptionDetails) throw new Error(JSON.stringify(result.exceptionDetails));
+      return result.result.value;
+    };
+    const snap = async name => {
+      await page.screenshot({ path: path.join(artifacts, `${name}.png`), animations: 'disabled' });
+      if (await panel.isVisible()) await panel.screenshot({ path: path.join(artifacts, `${name}-panel.png`), animations: 'disabled' });
+    };
+    const navigate = async view => { await evaluate(`__wbStudyTest.state.uiController.navigate(${JSON.stringify(view)})`); };
     assert.equal(await panel.isVisible(), false);
-    const image = await button.locator('img').evaluate(img => ({
-      loaded: img.complete && img.naturalWidth > 0, src: img.src
-    }));
-    assert.equal(image.loaded, true);
-    assert.match(image.src, /^chrome-extension:\/\/.*\/assets\/floating-assistant\.png$/);
-    await page.screenshot({ path: path.join(artifacts, 'collapsed.png') });
-    await button.click();
-    assert.equal(await panel.isVisible(), true);
-    assert.equal(await page.locator('#wb-start').textContent(), '开始');
-    assert.equal(await page.locator('#wb-playback-target').getAttribute('min'), '80');
-    assert.equal(await page.locator('#wb-playback-target').getAttribute('max'), '100');
-    assert.deepEqual(await page.locator('textPath tspan.wb-promo-word').allTextContents(),
-      ['创世の鑫元', '让灵感接入 AI', 'AI API 中转', 'GPT 会员代充值']);
-    const orbit = await page.locator('textPath').evaluate(tp => {
-      const path = tp.ownerSVGElement.querySelector('defs path');
-      return {
-        textLength: tp.getComputedTextLength(),
-        loopLength: path.getTotalLength() / 2,
-        travel: Number(tp.querySelector('animate').getAttribute('to'))
-      };
-    });
-    assert.ok(orbit.textLength < orbit.loopLength, 'the single message leaves an empty orbit segment');
-    assert.ok(Math.abs(orbit.travel - orbit.loopLength) < 2, 'the message travels exactly one lap');
-    await page.mouse.move(10, 10);
-    const readMotion = () => page.locator('textPath').evaluate(tp => tp.startOffset.animVal.value);
-    const initialOffset = await readMotion();
-    await page.waitForTimeout(300);
-    assert.notEqual(await readMotion(), initialOffset, 'visible text must move');
-    const rotations = await page.locator('textPath').evaluate(tp => {
-      const svg = tp.ownerSVGElement;
-      const duration = Number.parseFloat(tp.querySelector('animate').getAttribute('dur'));
-      const sampled = [];
-      svg.pauseAnimations();
-      for (let frame = 0; frame <= 100; frame += 1) {
-        svg.setCurrentTime(duration * frame / 100);
-        for (let i = 0; i < tp.getNumberOfChars(); i += 1) {
-          sampled.push(tp.getRotationOfChar(i));
-        }
-      }
-      svg.setCurrentTime(0);
-      svg.unpauseAnimations();
-      return sampled;
-    });
-    assert.ok(rotations.some(angle => Math.abs(Math.abs(angle) - 90) < 2), 'side glyphs rotate');
-    assert.ok(rotations.some(angle => Math.abs(angle) > 5 && Math.abs(angle) < 85),
-      'corner glyphs bend along the path');
-    const link = page.locator('.wb-promo-link');
-    await link.focus();
-    await page.waitForTimeout(200);
-    const point = await page.locator('textPath').evaluate(() => {
-      const link = document.querySelector('.wb-promo-link');
-      const rect = document.querySelector('.wb-promo-svg').getBoundingClientRect();
-      const probes = [];
-      for (let x = rect.left; x <= rect.right; x += 2) {
-        probes.push([x, rect.top + 12], [x, rect.bottom - 12]);
-      }
-      for (let y = rect.top; y <= rect.bottom; y += 2) {
-        probes.push([rect.left + 12, y], [rect.right - 12, y]);
-      }
-      // SVG character extents can include glyphs clipped at the loop seam.
-      for (const [x, y] of probes) {
-        const hit = document.elementFromPoint(x, y);
-        if (hit && link.contains(hit) && hit.closest('.wb-promo-word')) return { x, y };
-      }
-      return null;
-    });
-    assert.ok(point, 'find a painted glyph for real pointer verification');
-    await page.mouse.move(point.x, point.y);
-    await link.evaluate(anchor => anchor.blur());
-    await page.waitForTimeout(200);
-    assert.equal(await promo.evaluate(el => el.classList.contains('is-paused')), true);
-    const hoveredFont = await page.evaluate(({ x, y }) =>
-      getComputedStyle(document.elementFromPoint(x, y).closest('.wb-promo-word')).fontSize, point);
-    assert.equal(hoveredFont, '13px');
-    await page.screenshot({ path: path.join(artifacts, 'hover.png') });
-    const popupPromise = context.waitForEvent('page', { timeout: 5000 });
-    await page.mouse.click(point.x, point.y);
-    const popup = await popupPromise;
-    await popup.waitForLoadState();
-    assert.equal(popup.url(), 'https://88cf.scxai.top/');
-    await page.bringToFront();
-    await page.waitForTimeout(100);
-    assert.equal(await promo.evaluate(el => el.classList.contains('is-paused')), false);
-    const returnedOffset = await readMotion();
-    await page.waitForTimeout(300);
-    assert.notEqual(await readMotion(), returnedOffset, 'post-click motion resumes');
-    await page.mouse.move(10, 10);
-    await page.screenshot({ path: path.join(artifacts, 'desktop.png') });
-    await page.locator('#wb-min').click();
-    assert.equal(await panel.isVisible(), false);
-    assert.equal(await promo.isVisible(), false);
-    await button.click();
-    await page.setViewportSize({ width: 390, height: 780 });
-    await page.waitForFunction(() =>
-      document.querySelector('#wb-promotion').dataset.compact === 'true');
-    assert.equal(await promo.getAttribute('data-compact'), 'true');
-    const compactBox = await page.locator('.wb-promo-compact').boundingBox();
-    assert.ok(compactBox.x >= 0 && compactBox.y >= 0);
-    assert.ok(compactBox.x + compactBox.width <= 390);
-    assert.ok(compactBox.y + compactBox.height <= 780);
-    await page.screenshot({ path: path.join(artifacts, 'mobile.png') });
-    await page.setViewportSize({ width: 1280, height: 900 });
-    await page.emulateMedia({ reducedMotion: 'reduce' });
-    await page.waitForTimeout(100);
-    const reducedOffset = await readMotion();
-    await page.waitForTimeout(300);
-    assert.equal(await readMotion(), reducedOffset, 'reduced motion stays static');
-    console.log(JSON.stringify({
-      passed: true, browser: context.browser()?.version(), image,
-      checks: ['local extension image', 'collapsed entry', 'original panel', 'continuous motion',
-        'rounded corners', 'hover enlargement', 'explicit click', 'post-click recovery',
-        'collapse', 'narrow viewport', 'reduced motion'], artifacts
-    }, null, 2));
-  } finally {
-    await context.close();
-    await fs.rm(profile, { recursive: true, force: true });
-  }
+    assert.equal(await button.locator('img').evaluate(img => img.complete && img.naturalWidth > 0), true);
+    await snap('00-collapsed'); await button.click();
+    assert.equal((await panel.boundingBox()).width, 310);
+    assert.equal(await page.locator('#wb-log').isVisible(), false);
+    assert.equal(await page.locator('#wb-playback-target').isVisible(), false);
+    await snap('01-ready'); checks.push('real extension, local image, compact home');
+    // Stop only synthetic-document polling before seeding display states. No task is started.
+    await page.waitForTimeout(400);
+    await evaluate(`(() => {
+      for (let timer = 1; timer < 10000; timer++) clearInterval(timer);
+      const api = __wbStudyTest, s = api.state, directory = api.getDirectorySnapshot();
+      s.tabId = 1; s.storageFailed = false; s.mode = 'paused';
+      const job = { runId: 'visual-fixture', resetEpoch: 0, running: false, phase: 'paused', scope: 'all',
+        homeTabId: 1, ownerTabId: 1, workerTabId: 1, targetIndex: 0, targetPurpose: 'play', targetPercent: 90,
+        candidates: [{ key: 'clinical', courseKey: api.currentCourseKey(), title: '临床护理基础', status: 'inspected',
+          total: 3, remaining: 2, directory, currentResource: {key: directory.items[1].key}, records: {
+            [directory.items[0].key]: {title: directory.items[0].title, confirmed: true, ended: true},
+            [directory.items[1].key]: {title: directory.items[1].title, started: true, targetReached: true}
+          } }, {key:'community', title:'社区护理与健康教育', status:'uninspected'},
+          {key:'emergency', courseKey:'saved', title:'急危重症护理', status:'manual', total:1, remaining:1,
+            unfinished:['心肺复苏示范'], directory:{items:[{key:'cpr',title:'心肺复苏示范',mediaType:'video',durationSeconds:720,chapterTitle:'急救技能'}]},
+            records:{cpr:{title:'心肺复苏示范',error:'播放器加载超时',recovery:{attempts:2}}}}] };
+      api.acceptJob(job); api.updateTaskControls();
+      const media = document.querySelector('video');
+      Object.defineProperties(media, {duration:{configurable:true,get:()=>600}, currentTime:{configurable:true,get:()=>248}});
+    })()`);
+    await navigate('courses'); await snap('02-courses');
+    await page.locator('[data-course="1"]').click();
+    assert.match(await page.locator('.wb-view[data-view=course]').textContent(), /尚未读取/); await snap('03-unscanned');
+    await navigate('courses'); await page.locator('[data-course="0"]').click(); await snap('04-chapters');
+    await page.locator('[data-resource="1"]').click(); await snap('05-resource');
+    assert.match(await page.locator('.wb-view[data-view=resource]').textContent(), /平台确认尚未确认/);
+    await navigate('courses'); await page.locator('[data-course="2"]').click(); await page.locator('[data-resource]').click(); await snap('06-resource-error');
+    await navigate('alerts'); await snap('07-alerts');
+    await navigate('details'); await snap('08-details');
+    await navigate('logs'); await snap('09-logs');
+    await navigate('settings'); await snap('10-settings');
+    await page.locator('#wb-playback-target').fill('92'); await page.locator('#wb-playback-target').dispatchEvent('change');
+    await page.waitForFunction(() => document.getElementById('wb-setting-feedback').textContent === '已保存');
+    await page.locator('#wb-reset-menu').click(); await snap('11-reset-confirm');
+    await page.locator('#wb-reset-cancel').click();
+    assert.equal(await evaluate('__wbStudyTest.state.job.runId'), 'visual-fixture');
+    await navigate('about'); await snap('12-about');
+    assert.match(await page.locator('.wb-external').getAttribute('rel'), /noopener.*sponsored/);
+    checks.push('all nested views, settings save, reset cancel, unknown counts, independent completion labels');
+    const scenarios = [
+      ['scanning', {phase:'scan-home',running:true}, {}, '正在扫描课程'],
+      ['opening', {phase:'opening',running:true,targetPurpose:'play'}, {}, '正在打开课程'],
+      ['inspecting', {phase:'course',running:true,targetPurpose:'inspect'}, {}, '正在统计音视频'],
+      ['learning', {phase:'course',running:true,targetPurpose:'play'}, {}, '正在学习'],
+      ['verifying', {phase:'course',running:true,targetPurpose:'play'}, {legacy:'正在核对平台完成状态'}, '正在核对平台状态'],
+      ['recovering', {phase:'course',running:true}, {routeRecoveryPending:true}, '正在自动恢复'],
+      ['paused', {phase:'paused',running:false}, {}, '已暂停'],
+      ['manual', {phase:'manual',running:false,reason:'网站需要重新登录，请先处理登录提示'}, {}, '需要你处理'],
+      ['interrupted', {phase:'interrupted',running:false,reason:'课程页面意外关闭'}, {}, '任务已中断'],
+      ['storage-error', {phase:'paused',running:false}, {storageFailed:true}, '保存失败'],
+      ['resetting', {phase:'paused',running:false}, {resetPending:true}, '正在重置'],
+      ['reset-retry', {phase:'resetting',running:false}, {}, '重置尚未完成'],
+      ['other-tab', {phase:'course',running:true}, {tabId:99}, '任务在其他标签页'],
+      ['finished-alerts', {phase:'finished',running:false}, {}, '本轮处理结束']
+    ];
+    await navigate('home');
+    for (const [name, patch, statePatch, expected] of scenarios) {
+      await evaluate(`(() => {const s=__wbStudyTest.state; Object.assign(s,{mode:'paused',tabId:1,routeRecoveryPending:false,storageFailed:false,resetPending:false},${JSON.stringify(statePatch)}); Object.assign(s.job,{reason:'',targetPurpose:'play'},${JSON.stringify(patch)}); document.getElementById('wb-current').textContent=${JSON.stringify(statePatch.legacy || '')}; document.getElementById('wb-status').textContent=''; __wbStudyTest.updateTaskControls();})()`);
+      assert.equal(await page.locator('#wb-ui-status').textContent(), expected);
+      await snap(`state-${name}`);
+    }
+    await evaluate(`(() => {const s=__wbStudyTest.state;s.job.running=true;s.job.phase='course';s.job.reason='';s.tabId=1;__wbStudyTest.updateTaskControls();})()`);
+    await page.setViewportSize({ width: 320, height: 460 });
+    await navigate('courses'); await page.waitForTimeout(180);
+    const bounds = await panel.boundingBox(); assert.ok(bounds.x >= 0 && bounds.y >= 0 && bounds.x + bounds.width <= 320 && bounds.y + bounds.height <= 460);
+    assert.equal(await panel.evaluate(el => el.scrollWidth <= el.clientWidth), true);
+    await snap('13-narrow');
+    await page.setViewportSize({ width: 360, height: 240 }); await navigate('settings'); await page.waitForTimeout(180);
+    const short = await panel.boundingBox(); assert.ok(short.y >= 0 && short.y + short.height <= 240);
+    await page.locator('#wb-reset-menu').scrollIntoViewIfNeeded(); assert.equal(await page.locator('#wb-reset-menu').isVisible(), true); await snap('14-short');
+    await page.setViewportSize({ width: 1280, height: 900 }); await page.emulateMedia({ colorScheme:'dark', reducedMotion:'reduce' }); await navigate('courses');
+    assert.equal(await page.locator('.wb-view[data-view=courses]').evaluate(el => getComputedStyle(el).animationName), 'none');
+    await snap('15-dark-reduced-motion'); checks.push('narrow and short viewport, dark mode, reduced motion');
+    await navigate('home'); await page.locator('#wb-min').click();
+    assert.equal(await evaluate('__wbStudyTest.state.job.running'), true);
+    const start = await button.boundingBox(); await page.mouse.move(start.x+25,start.y+25); await page.mouse.down(); await page.mouse.move(30,40,{steps:8}); await page.mouse.up();
+    assert.equal(await panel.isVisible(), false); const dragged = await button.boundingBox(); assert.ok(dragged.x >= 8 && dragged.y >= 8);
+    await button.focus(); await page.keyboard.press('Enter'); assert.equal(await panel.isVisible(), true);
+    checks.push('drag, keyboard expand, collapse preserves running state');
+    assert.deepEqual(errors, []);
+    const report = {passed:true, browser:context.browser()?.version(), checks, scenarios:scenarios.length, errors, artifacts};
+    await fs.writeFile(path.join(artifacts,'report.json'), JSON.stringify(report,null,2)); console.log(JSON.stringify(report,null,2));
+  } finally { await context.close(); await fs.rm(profile,{recursive:true,force:true}); }
 }
-
-main().catch(error => {
-  console.error(error);
-  process.exitCode = 1;
-});
+main().catch(error => { console.error(error); process.exitCode = 1; });

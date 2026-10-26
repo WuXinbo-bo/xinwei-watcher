@@ -9,8 +9,8 @@ function setLayout(f) {
   panel.getBoundingClientRect = () => {
     const viewportWidth = window.visualViewport?.width ?? window.innerWidth;
     const viewportHeight = window.visualViewport?.height ?? window.innerHeight;
-    const width = Math.min(342, Math.max(0, viewportWidth - 30));
-    const shellHeight = parseFloat(panel.style.getPropertyValue('--wb-shell-height')) || 28;
+    const width = Math.min(310, Math.max(0, viewportWidth - 16));
+    const shellHeight = 16;
     const height = Math.min(480, Math.max(0, viewportHeight - shellHeight));
     const left = panel.style.left ? parseFloat(panel.style.left) : window.innerWidth - width - 18;
     const top = panel.style.top ? parseFloat(panel.style.top) : 90;
@@ -127,7 +127,7 @@ test('dragging the expanded header moves the panel and ignores its close button'
     pointer(f.window, f.window.document, 'pointerup', 700, 220);
 
     assert.equal(panel.hidden, false);
-    assert.equal(panel.style.left, '450px');
+    assert.equal(panel.style.left, '496px');
     assert.equal(panel.style.top, '200px');
     assert.equal(button.hidden, true);
   } finally { close(f); }
@@ -239,7 +239,7 @@ test('dragging the collapsed button preserves its vertical position when expande
   } finally { close(f); }
 });
 
-test('short viewports constrain the panel and keep the compact promotion link in view', () => {
+test('short viewports constrain the panel and allow its content to scroll', () => {
   const f = fixture([]);
   try {
     setLayout(f);
@@ -256,14 +256,11 @@ test('short viewports constrain the panel and keep the compact promotion link in
     assert.equal(panel.hidden, false);
     assert.equal(panel.style.top, '8px');
     assert.ok(panelRect.top >= 8);
-    assert.ok(panelRect.bottom + 48 <= f.window.innerHeight);
-    assert.equal(f.window.document.getElementById('wb-promotion').dataset.compact, 'true');
-    assert.equal(f.window.document.querySelector('.wb-promo-compact').hidden, false);
-    assert.equal(f.window.document.getElementById('wb-body').style.overflowY, '');
-
+    assert.ok(panelRect.bottom + 8 <= f.window.innerHeight);
+    assert.equal(f.window.document.getElementById('wb-promotion'), null);
     const injectedStyle = [...f.window.document.querySelectorAll('style')]
       .map(style => style.textContent).join('\n');
-    assert.match(injectedStyle, /max-height:\s*calc\(var\(--wb-visible-height,100vh\) - var\(--wb-shell-height,28px\)\)/);
+    assert.match(injectedStyle, /max-height:\s*calc\(var\(--wb-visible-height,100vh\) - 16px\)/);
     assert.match(injectedStyle, /#wb-study-ui \.bd\{[^}]*overflow-y:auto/s);
   } finally { close(f); }
 });
@@ -310,10 +307,10 @@ test('visual viewport resize and pan keep the floating assistant inside its visi
     pointer(f.window, f.window.document, 'pointerup', 520, 220);
     const panelRect = panel.getBoundingClientRect();
     assert.equal(panel.hidden, false);
-    assert.ok(panelRect.left >= viewport.offsetLeft + 13);
+    assert.ok(panelRect.left >= viewport.offsetLeft + 8);
     assert.ok(panelRect.top >= viewport.offsetTop + 8);
-    assert.ok(panelRect.right + 12 <= viewport.offsetLeft + viewport.width);
-    assert.ok(panelRect.bottom + 48 <= viewport.offsetTop + viewport.height);
+    assert.ok(panelRect.right + 8 <= viewport.offsetLeft + viewport.width);
+    assert.ok(panelRect.bottom + 8 <= viewport.offsetTop + viewport.height);
   } finally { close(f); }
 });
 
@@ -353,220 +350,6 @@ test('non-primary and canceled pointers do not activate the floating assistant',
   } finally { close(f); }
 });
 
-test('promotion uses one continuous SVG text path and opens only its external link', () => {
-  const f = fixture([]);
-  try {
-    setLayout(f);
-    const promo = f.window.document.getElementById('wb-promotion');
-    const button = f.window.document.getElementById('wb-assistant-button');
-    assert.ok(promo);
-    assert.equal(promo.hidden, true);
-    assert.equal(promo.querySelectorAll('.wb-promo-edge').length, 0);
-    assert.equal(promo.querySelectorAll('.wb-promo-link').length, 1);
-    assert.equal(promo.querySelectorAll('.wb-promo-compact').length, 1);
-
-    pointer(f.window, button, 'pointerdown', 980, 110);
-    pointer(f.window, f.window.document, 'pointerup', 980, 110);
-
-    assert.equal(promo.hidden, false);
-    assert.match(promo.textContent, /创世の鑫元/);
-    assert.match(promo.textContent, /让灵感接入 AI/);
-    assert.match(promo.textContent, /AI API 中转/);
-    assert.match(promo.textContent, /GPT 会员代充值/);
-    assert.doesNotMatch(promo.textContent, /推广|了解更多/);
-    assert.match(promo.getAttribute('aria-label'), /非课程平台服务/);
-    const link = promo.querySelector('.wb-promo-link');
-    assert.equal(link.getAttribute('href'), 'https://88cf.scxai.top/');
-    assert.equal(link.getAttribute('target'), '_blank');
-    assert.match(link.getAttribute('rel'), /noopener.*sponsored/);
-    assert.match(link.getAttribute('aria-label'), /外部商业服务/);
-    const path = promo.querySelector('defs path');
-    const textPath = promo.querySelector('textPath');
-    const motion = promo.querySelector('.wb-promo-motion');
-    assert.equal((path.getAttribute('d').match(/\bM\b/g) || []).length, 2);
-    assert.equal((path.getAttribute('d').match(/\bZ\b/g) || []).length, 2);
-    assert.match(textPath.getAttribute('href'), /^#wb-promo-path-/);
-    assert.deepEqual(
-      Array.from(textPath.querySelectorAll('tspan.wb-promo-word'), span => span.textContent),
-      ['创世の鑫元', '让灵感接入 AI', 'AI API 中转', 'GPT 会员代充值']
-    );
-    assert.equal(textPath.hasAttribute('textLength'), false);
-    assert.equal(motion.getAttribute('attributeName'), 'startOffset');
-    assert.equal(motion.getAttribute('repeatCount'), 'indefinite');
-    assert.ok(Number(motion.getAttribute('to')) > 0);
-    assert.equal(promo.dataset.compact, 'false');
-
-    const injectedStyle = [...f.window.document.querySelectorAll('style')]
-      .map(style => style.textContent).join('\n');
-    assert.match(injectedStyle, /prefers-reduced-motion:\s*reduce/);
-    assert.match(injectedStyle, /#wb-promotion\s*\{[^}]*pointer-events:none/s);
-    assert.match(injectedStyle, /wb-promo-svg/);
-    assert.match(injectedStyle, /font-size:13px/);
-    assert.doesNotMatch(injectedStyle, /offset-rotate/);
-  } finally { close(f); }
-});
-
-test('hovering and keyboard focus pause the whole orbit and resume without resetting it', () => {
-  const f = fixture([]);
-  try {
-    setLayout(f);
-    f.window.document.getElementById('wb-assistant-button').click();
-    const promo = f.window.document.getElementById('wb-promotion');
-    const links = promo.querySelectorAll('a');
-    const path = promo.querySelector('defs path').getAttribute('d');
-    links[0].dispatchEvent(new f.window.MouseEvent('pointerover', { bubbles: true }));
-    assert.equal(promo.classList.contains('is-paused'), true);
-    links[0].dispatchEvent(new f.window.MouseEvent('pointerout', {
-      bubbles: true, relatedTarget: links[1]
-    }));
-    assert.equal(promo.classList.contains('is-paused'), true);
-    links[1].dispatchEvent(new f.window.MouseEvent('pointerout', { bubbles: true }));
-    assert.equal(promo.classList.contains('is-paused'), false);
-    links[0].focus();
-    assert.equal(promo.classList.contains('is-paused'), true);
-    links[0].dispatchEvent(new f.window.MouseEvent('pointerout', { bubbles: true }));
-    assert.equal(promo.classList.contains('is-paused'), true);
-    links[0].blur();
-    assert.equal(promo.classList.contains('is-paused'), false);
-    assert.equal(promo.querySelector('defs path').getAttribute('d'), path);
-
-    links[0].focus();
-    assert.equal(promo.classList.contains('is-paused'), true);
-    const move = x => {
-      const event = new f.window.MouseEvent('pointermove', { bubbles: true });
-      Object.defineProperty(event, 'clientX', { value: x });
-      Object.defineProperty(event, 'clientY', { value: 20 });
-      f.window.document.dispatchEvent(event);
-    };
-    move(10);
-    f.window.dispatchEvent(new f.window.Event('blur'));
-    f.window.dispatchEvent(new f.window.Event('focus'));
-    assert.equal(promo.classList.contains('is-paused'), false);
-    assert.notEqual(f.window.document.activeElement, links[0]);
-    links[0].dispatchEvent(new f.window.MouseEvent('pointerover', { bubbles: true }));
-    assert.equal(promo.classList.contains('is-paused'), false);
-    move(11);
-    assert.equal(promo.classList.contains('is-paused'), false);
-    move(12);
-    assert.equal(promo.classList.contains('is-paused'), false);
-    move(13);
-    links[0].dispatchEvent(new f.window.MouseEvent('pointerover', { bubbles: true }));
-    assert.equal(promo.classList.contains('is-paused'), true);
-  } finally { close(f); }
-});
-
-test('activating a promotion link clears retained focus even without browser leave events', async () => {
-  const f = fixture([]);
-  try {
-    setLayout(f);
-    f.window.document.getElementById('wb-assistant-button').click();
-    const promo = f.window.document.getElementById('wb-promotion');
-    const link = promo.querySelector('.wb-promo-link');
-    const text = link.querySelector('.wb-promo-word');
-    link.focus();
-    text.dispatchEvent(new f.window.MouseEvent('pointerover', { bubbles: true }));
-    assert.equal(promo.classList.contains('is-paused'), true);
-    // Avoid jsdom's unsupported navigation; test only the post-activation cleanup.
-    link.addEventListener('click', event => event.preventDefault());
-    text.dispatchEvent(new f.window.MouseEvent('click', { bubbles: true, cancelable: true }));
-    await new Promise(resolve => f.window.setTimeout(resolve, 5));
-    assert.equal(promo.classList.contains('is-paused'), false);
-    assert.equal(link.contains(f.window.document.activeElement), false);
-    assert.equal(f.api.state.running, false);
-  } finally { close(f); }
-});
-
-test('visibility and BFCache return resume SVG motion, while reduced motion stays static', async () => {
-  let preference;
-  let hidden = false;
-  let pauses = 0;
-  let resumes = 0;
-  const f = fixture([], {
-    beforeContent({ window }) {
-      preference = new window.EventTarget();
-      preference.matches = false;
-      window.matchMedia = () => preference;
-      window.SVGElement.prototype.pauseAnimations = () => { pauses++; };
-      window.SVGElement.prototype.unpauseAnimations = () => { resumes++; };
-      Object.defineProperty(window.document, 'hidden', { get: () => hidden });
-    }
-  });
-  try {
-    setLayout(f);
-    f.window.document.getElementById('wb-assistant-button').click();
-    await Promise.resolve();
-    const promo = f.window.document.getElementById('wb-promotion');
-    const link = promo.querySelector('.wb-promo-link');
-    assert.ok(resumes > 0);
-    link.focus();
-    hidden = true;
-    f.window.document.dispatchEvent(new f.window.Event('visibilitychange'));
-    assert.equal(promo.classList.contains('is-paused'), true);
-    hidden = false;
-    f.window.document.dispatchEvent(new f.window.Event('visibilitychange'));
-    assert.equal(promo.classList.contains('is-paused'), false);
-    assert.equal(link.contains(f.window.document.activeElement), false);
-    link.focus();
-    const restored = new f.window.Event('pageshow');
-    Object.defineProperty(restored, 'persisted', { value: true });
-    f.window.dispatchEvent(restored);
-    assert.equal(promo.classList.contains('is-paused'), false);
-
-    preference.matches = true;
-    preference.dispatchEvent(new f.window.Event('change'));
-    assert.equal(promo.classList.contains('is-paused'), true);
-    f.window.dispatchEvent(new f.window.Event('blur'));
-    f.window.dispatchEvent(new f.window.Event('focus'));
-    assert.equal(promo.classList.contains('is-paused'), true);
-    preference.matches = false;
-    preference.dispatchEvent(new f.window.Event('change'));
-    assert.equal(promo.classList.contains('is-paused'), false);
-    f.window.document.getElementById('wb-min').click();
-    assert.equal(promo.hidden, true);
-    assert.equal(promo.classList.contains('is-paused'), true);
-    assert.ok(pauses > 0);
-  } finally { close(f); }
-});
-
-test('narrow viewports use a compact external brand link and recover the orbit on resize', () => {
-  const f = fixture([]);
-  try {
-    setLayout(f);
-    const promo = f.window.document.getElementById('wb-promotion');
-    const button = f.window.document.getElementById('wb-assistant-button');
-    Object.defineProperty(f.window, 'innerWidth', { configurable: true, value: 390 });
-    f.window.dispatchEvent(new f.window.Event('resize'));
-    button.click();
-    assert.equal(promo.dataset.compact, 'true');
-    assert.equal(promo.hidden, false);
-    assert.equal(f.window.document.getElementById('wb-study-ui').hidden, false);
-    Object.defineProperty(f.window, 'innerWidth', { configurable: true, value: 1200 });
-    f.window.dispatchEvent(new f.window.Event('resize'));
-    assert.equal(promo.dataset.compact, 'false');
-    assert.match(promo.querySelector('defs path').getAttribute('d'), / Z$/);
-    assert.equal(promo.querySelector('.wb-promo-compact').hidden, true);
-  } finally { close(f); }
-});
-
-test('disabling the promotion hides only its layer and leaves the panel usable', () => {
-  const f = fixture([]);
-  try {
-    setLayout(f);
-    const button = f.window.document.getElementById('wb-assistant-button');
-    pointer(f.window, button, 'pointerdown', 980, 110);
-    pointer(f.window, f.window.document, 'pointerup', 980, 110);
-    f.api.state.running = true;
-    f.api.PROMOTION_CONFIG.enabled = false;
-    f.api.updateTaskControls();
-
-    assert.equal(f.window.document.getElementById('wb-promotion').hidden, true);
-    assert.equal(f.window.document.getElementById('wb-study-ui').hidden, false);
-    assert.equal(f.window.document.getElementById('wb-assistant-button').hidden, true);
-    assert.ok(f.window.document.getElementById('wb-start'));
-    assert.equal(f.api.state.running, true);
-  } finally { close(f); }
-});
-
 test('manifest exposes only the local avatar to the existing course-site origin', () => {
   const manifest = JSON.parse(require('node:fs').readFileSync('manifest.json', 'utf8'));
   assert.deepEqual(manifest.permissions, ['storage']);
@@ -574,4 +357,26 @@ test('manifest exposes only the local avatar to the existing course-site origin'
     resources: ['assets/floating-assistant.png'],
     matches: ['https://www.beeline-ai.com/*']
   }]);
+});
+
+test('commercial services appear only after opening About, with an explicit safe link', () => {
+  const f = fixture([]);
+  try {
+    const box = f.window.document.getElementById('wb-study-ui');
+    f.window.document.getElementById('wb-assistant-button').click();
+    assert.equal(box.querySelector('a'), null);
+    assert.equal(box.querySelector('animate'), null);
+    f.api.state.uiController.navigate('settings');
+    box.querySelector('[data-ui-view="about"]').click();
+    const link = box.querySelector('.wb-external');
+    assert.equal(link.href, 'https://88cf.scxai.top/');
+    assert.equal(link.target, '_blank');
+    assert.match(link.rel, /noopener.*noreferrer.*sponsored/);
+    assert.match(link.parentElement.textContent, /第三方商业服务/);
+    assert.equal(f.api.state.running, false);
+    f.api.PROMOTION_CONFIG.enabled = false;
+    f.api.updateTaskControls();
+    assert.equal(box.querySelector('a'), null);
+    assert.equal(box.hidden, false);
+  } finally { close(f); }
 });

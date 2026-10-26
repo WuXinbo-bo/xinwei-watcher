@@ -21,9 +21,13 @@
         "https://www.beeline-ai.com/*"
       ],
       "js": [
+        "assistant-ui.js",
         "content.js"
       ],
-      "run_at": "document_idle"
+      "run_at": "document_idle",
+      "css": [
+        "assistant-ui.css"
+      ]
     }
   ],
   "web_accessible_resources": [

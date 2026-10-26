@@ -23,7 +23,7 @@ npm test
 - 播放、目录、导航、刷新和浏览器操作故障的有界恢复。
 - 课程末平台核对、异常资源重试、日志保留和人工阻断场景。
 
-本文件描述测试设计；本次实际通过、失败、跳过和取消数量见 [`docs/VERIFICATION.md`](../docs/VERIFICATION.md)。
+本文件描述测试设计；本轮 UI 的实际结果见 [`docs/UI_DELIVERY.md`](../docs/UI_DELIVERY.md)，历史业务验证见 [`docs/VERIFICATION.md`](../docs/VERIFICATION.md)。
 
 ## 可选浏览器 UI 验收
 
@@ -36,4 +36,4 @@ BROWSER_EXECUTABLE="/path/to/Edge" UI_ARTIFACTS_DIR="/tmp/xinwei-ui-results" \
   node tests/ui-browser-smoke.cjs
 ```
 
-验收项包括扩展本地图片、默认收起、字形圆角转向、悬停放大、主动外链与返回恢复、窄视口兜底和减少动态效果。截图为本地 fixture 上的真实浏览器渲染，不代表真实课程验收。
+验收项包括扩展本地图片、默认收起、全部内页、14 类任务状态、设置保存、重置取消、拖动与键盘展开、窄/矮视口、深色模式和减少动态效果。测试只在本地合成文档内设置显示状态，不点击开始或确认重置。截图为本地 fixture 上的真实浏览器渲染，不代表真实课程验收。

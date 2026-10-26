@@ -107,7 +107,8 @@
       }
       keys.add(item.key);
       return { key: item.key, title: item.title, mediaType: item.mediaType,
-        durationSeconds: item.durationSeconds };
+        durationSeconds: item.durationSeconds,
+        ...(typeof item.chapterTitle === 'string' ? { chapterTitle: item.chapterTitle.slice(0, 160) } : {}) };
     });
     const snapshot = { version: 1, courseKey: key, items };
     if (raw.signature != null) snapshot.signature = raw.signature;
