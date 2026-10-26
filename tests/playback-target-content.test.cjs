@@ -270,6 +270,96 @@ async function sharedTargetFixture(options = {}) {
   return { ...f, c, id, messages };
 }
 
+test('当前正常播放从100降到80后立即按新目标收尾并保存有效目标', async () => {
+  const f = targetFixture();
+  try {
+    const { task } = await begin(f, { targetPercent: 100 });
+    f.advanceNaturally(85);
+    await f.api.savePlaybackTarget(80);
+    const result = await task;
+    assert.equal(result.effectiveTarget, 80);
+    assert.equal(result.targetReached, true);
+    assert.equal(result.ended, false);
+    assert.equal(result.confirmed, false);
+    assert.equal(f.media.currentTime, 85);
+    assert.equal(f.api.state.activePlaybackTarget, null);
+  } finally { dispose(f); }
+});
+
+test('当前正常播放从80提高到95后不会在旧目标结束', async () => {
+  const f = targetFixture();
+  try {
+    const { task } = await begin(f, { targetPercent: 80 });
+    let finished = false; task.then(() => { finished = true; });
+    await f.api.savePlaybackTarget(95);
+    await waitFor(() => f.api.state.processedItems.get(f.key)?.effectiveTarget === 95);
+    f.advanceNaturally(85); await new Promise(resolve => setTimeout(resolve, 20));
+    assert.equal(finished, false);
+    f.advanceNaturally(95);
+    assert.equal((await task).effectiveTarget, 95);
+  } finally { dispose(f); }
+});
+
+test('强制100重试不随普通目标下降，结束后保留真实100目标', async () => {
+  const f = targetFixture();
+  try {
+    const { task } = await begin(f, { targetPercent: 100, forceTarget: true });
+    let finished = false; task.then(() => { finished = true; });
+    await f.api.savePlaybackTarget(80);f.advanceNaturally(85);
+    await new Promise(resolve => setTimeout(resolve, 20));assert.equal(finished, false);
+    assert.equal(f.api.state.activePlaybackTarget.forced, true);
+    f.advanceNaturally(100, true);f.media.dispatchEvent(new f.window.Event('ended'));
+    const result = await task;assert.equal(result.effectiveTarget,100);assert.equal(result.ended,true);
+  } finally { dispose(f); }
+});
+
+test('达到目标进入收尾后提高设置不重新打开当前资源', async () => {
+  const f = targetFixture();
+  try {
+    f.api.CFG.cooldownMin = f.api.CFG.cooldownMax = 60;
+    const { task } = await begin(f, {targetPercent:80});
+    f.advanceNaturally(80);
+    await waitFor(() => f.api.state.activePlaybackTarget?.settled);
+    await f.api.savePlaybackTarget(95);
+    assert.equal((await task).effectiveTarget,80);
+    assert.equal(f.api.getPlaybackTarget(),95);
+  } finally {dispose(f);}
+});
+
+test('共享任务的运行中目标变更写入后台断点且不变更所有者或代次', async () => {
+  const f = await sharedTargetFixture();
+  try {
+    const { task } = await begin(f, {targetPercent:100});
+    const generation = f.api.state.job.generation;
+    await f.api.savePlaybackTarget(90);
+    await waitFor(() => f.c.storage.session[KEY].candidates[0].records[f.key]?.effectiveTarget === 90);
+    f.advanceNaturally(90);assert.equal((await task).effectiveTarget,90);
+    const job = f.c.storage.session[KEY];
+    assert.equal(job.generation,generation);assert.equal(job.ownerTabId,f.id);assert.equal(job.running,true);
+    assert.equal(f.c.storage.local[KEY].candidates[0].records[f.key].effectiveTarget,90);
+  } finally {dispose(f);}
+});
+
+test('跨标签页目标读取延迟时等待新目标，不误按旧80目标收尾', async () => {
+  let changed, release, reads=0;
+  const f=targetFixture({chrome:{runtime:{sendMessage:async()=>({ok:true,job:null,tabId:1})},storage:{
+    local:{get:async key=>key!=='wb-playback-target'?{}:++reads===1?{'wb-playback-target':80}:await new Promise(resolve=>{release=resolve;}),set:async()=>{}},
+    onChanged:{addListener:listener=>{changed=listener;}}
+  }}});
+  try {
+    await f.api.state.playbackTargetReady;
+    const {task}=await begin(f,{targetPercent:80});
+    let finished=false;task.then(()=>{finished=true;});
+    changed({'wb-playback-target':{oldValue:80,newValue:95}},'local');
+    await waitFor(()=>release);f.advanceNaturally(85);
+    await new Promise(resolve=>setTimeout(resolve,20));assert.equal(finished,false);
+    release({'wb-playback-target':95});
+    await waitFor(()=>f.api.state.processedItems.get(f.key)?.effectiveTarget===95);
+    assert.equal(finished,false);f.advanceNaturally(95);
+    assert.equal((await task).effectiveTarget,95);
+  } finally {release?.({'wb-playback-target':95});dispose(f);}
+});
+
 test('低于80的坏视频课程收尾最多重试三次后暂缓，不伪报完成或停止整轮', async () => {
   const f = await sharedTargetFixture();
   try {

@@ -383,3 +383,21 @@ test('manual warnings are available on demand in the alerts view', () => {
     assert.equal(list.closest('[data-view]').hidden, false);
   } finally { close(f); }
 });
+
+test('valid input applies before blur; incomplete edits preserve the last applied target', async () => {
+  const values={};
+  const f=fixture([], {chrome:settingsChrome({get:async()=>({...values}),set:async update=>Object.assign(values,update)})});
+  try {
+    await f.api.state.playbackTargetReady;
+    f.api.state.uiController.navigate('settings');
+    const input=f.window.document.getElementById('wb-playback-target');input.focus();
+    for(const typed of ['','8','101']){input.value=typed;input.dispatchEvent(new f.window.Event('input'));assert.equal(f.api.getPlaybackTarget(),100);}
+    input.value='87';input.dispatchEvent(new f.window.Event('input'));
+    assert.equal(f.api.getPlaybackTarget(),87);assert.equal(f.window.document.activeElement,input);
+    await f.api.state.playbackTargetWrites;assert.equal(values[KEY],87);
+    f.window.document.querySelector('[data-target-preset=80]').click();
+    await f.api.state.playbackTargetWrites;assert.equal(values[KEY],80);assert.equal(input.value,'80');
+    assert.equal(f.window.document.querySelector('[data-target-preset=80]').getAttribute('aria-pressed'),'true');
+    assert.equal(f.media.paused,true);
+  } finally {close(f);}
+});

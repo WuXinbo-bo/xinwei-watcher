@@ -34,7 +34,7 @@ test('home distinguishes course completion, learning-item completion and target 
     assert.equal(f.box.querySelectorAll('[data-course]').length,1);
     f.box.querySelector('[data-course=1]').click();assert.equal(f.ui.view,'course');
     assert.match(f.box.querySelector('[data-view=course]').textContent,/已完成课程/);
-    f.ui.navigate('home');f.box.querySelector('#wb-ui-directory').click();
+    f.ui.navigate('home');f.box.querySelector('[data-current-directory]').click();
     assert.match(f.box.querySelector('[data-view=course]').textContent,/操作系统原理/);
     f.ui.navigate('home');f.box.querySelector('[data-current-directory]').click();assert.equal(f.ui.view,'course');
     f.ui.navigate('home');f.box.querySelector('[data-course-filter=attention]').click();
@@ -48,7 +48,7 @@ test('scanning and unknown totals omit percentages; target reached does not conf
   try {
     f.job.phase='scan-home';f.ui.render();
     const summary=f.box.querySelector('#wb-home-summary');
-    assert.match(summary.textContent,/扫描中.*已发现 4 门课程/s);assert.equal(summary.querySelector('[role=progressbar]'),null);
+    assert.match(summary.textContent,/扫描中.*已发现 4 门课程/s);assert.equal(summary.querySelector('#wb-home-task-progress [role=progressbar]'),null);
     const c=f.job.candidates[0];c.total=5;delete c.remaining;c.records={};
     c.records[c.directory.items[0].key]={targetReached:true,ended:true};
     f.ui.render();assert.match(f.box.querySelector('#wb-home-course-progress').textContent,/已完成 0 项 · 待完成 5 项/);

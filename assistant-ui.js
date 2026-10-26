@@ -37,15 +37,11 @@
       </aside>
       <div class="bd" id="wb-body">
         <section class="wb-view" data-view="home">
-          <div class="wb-summary-card" id="wb-home-summary" hidden></div>
-          <div class="wb-status-line" id="wb-ui-status" role="status" aria-live="polite"></div>
+          <div class="wb-summary-card" id="wb-home-summary" hidden><div id="wb-home-task-progress"></div><div class="wb-course-progress" id="wb-home-course-progress" hidden></div></div>
+          <div class="wb-learning-status"><div class="wb-status-line" id="wb-ui-status" role="status" aria-live="polite"></div><button class="wb-target-badge" id="wb-ui-target-badge" type="button" data-ui-view="settings" hidden></button></div>
           <h2 class="wb-title" id="wb-ui-title"></h2><p class="wb-subtitle" id="wb-ui-subtitle"></p>
-          <div class="wb-progress" id="wb-ui-progress" hidden>
-            <div class="wb-progress-label"><span id="wb-ui-progress-label"></span><span id="wb-ui-progress-text"></span></div>
-            <div class="wb-track" id="wb-ui-progressbar" role="progressbar" aria-label="当前进度" aria-valuemin="0" aria-valuemax="100"><div class="wb-fill" id="wb-ui-fill"></div></div>
-          </div>
+          <div class="wb-playback-meta" id="wb-ui-progress" hidden><span id="wb-ui-progress-label"></span><span id="wb-ui-progress-text"></span></div>
           <p class="wb-caption" id="wb-ui-caption"></p>
-          <div class="wb-course-progress" id="wb-home-course-progress" hidden></div>
           <p class="wb-notice" id="wb-ui-notice" hidden></p>
           <div class="wb-actions"><button class="btn primary start" id="wb-start" type="button">开始</button><button class="btn primary stop" id="wb-stop" type="button" hidden>暂停</button><button class="btn" id="wb-ui-directory" type="button" hidden>查看本课目录</button><button class="btn" id="wb-ui-results" type="button" data-ui-view="alerts" hidden>查看待处理事项</button><button class="btn" id="wb-ui-reset-retry" type="button" data-ui-view="reset" hidden>重试重置</button></div>
         </section>
@@ -83,7 +79,9 @@
         <section class="wb-view" data-view="settings" hidden>
           <button class="wb-link wb-back" type="button" data-ui-view="home">${svg('back')}任务首页</button><h2 class="wb-title">设置</h2>
           <label class="kv playback-target" for="wb-playback-target"><span>播放目标</span><span class="target-value"><input id="wb-playback-target" type="number" min="80" max="100" step="1" value="100" aria-label="播放目标百分比"><span>%</span></span></label>
-          <p class="wb-caption">80%–100%，默认 100%。更改后自动保存；平台完成状态会另行核对。</p><p class="wb-caption" id="wb-setting-feedback" role="status" aria-live="polite"></p>
+          <div class="wb-target-presets" role="group" aria-label="快捷播放目标">${[80,90,100].map(value => `<button type="button" data-target-preset="${value}" aria-pressed="false">${value}%</button>`).join('')}</div>
+          <p class="wb-caption">80%–100%，默认 100%。有效整数立即应用到当前正常播放；异常重试保持 100%。达到播放目标后切换，平台完成状态另行核对。</p><p class="wb-caption" id="wb-setting-feedback" role="status" aria-live="polite"></p>
+          <button class="wb-setting-row" type="button" data-ui-view="details">任务概览与日志<span>›</span></button>
           <button class="wb-setting-row" type="button" data-ui-view="about">关于与服务<span>›</span></button>
           <button class="wb-setting-row danger" id="wb-reset-menu" type="button" data-ui-view="reset">重置任务记录<span>›</span></button>
         </section>
@@ -393,12 +391,12 @@
       box.dataset.view = view; box.dataset.tone = model.home.tone;
       syncSponsor();
       for (const page of box.querySelectorAll('[data-view]')) page.hidden = page.dataset.view !== view;
-      $('wb-ui-nav').hidden = view !== 'home'; $('wb-ui-task-strip').hidden = view === 'home' || !model.hasTaskState;
+      $('wb-ui-nav').hidden = true; $('wb-ui-task-strip').hidden = view === 'home' || !model.hasTaskState;
       text('wb-ui-status', model.home.status); text('wb-ui-title', model.home.title); text('wb-ui-subtitle', model.home.subtitle);
       $('wb-ui-subtitle').hidden = !model.home.subtitle;
       text('wb-ui-caption', model.home.caption); $('wb-ui-caption').hidden = !model.home.caption;
-      const summary = $('wb-home-summary');
-      summary.hidden = !model.job;
+      $('wb-home-summary').hidden = !model.job;
+      const summary = $('wb-home-task-progress');
       const summaryHtml = model.job ? taskSummary() : '';
       if (summary.innerHTML !== summaryHtml) {
         const focused = summary.contains(document.activeElement) ? document.activeElement.dataset.courseFilter : null;
@@ -413,15 +411,13 @@
         courseProgress.innerHTML = courseHtml;
         if (focused) courseProgress.querySelector('button')?.focus({preventScroll: true});
       }
-      $('wb-ui-directory').hidden = !current || !model.job;
+      $('wb-ui-directory').hidden = true;
+      text('wb-ui-target-badge', model.home.targetBadge); $('wb-ui-target-badge').hidden = !model.home.targetBadge;
       text('wb-ui-notice', model.home.notice); $('wb-ui-notice').hidden = !model.home.notice;
       const p = model.home.progress;
       $('wb-ui-progress').hidden = !p;
       if (p) {
         text('wb-ui-progress-label', p.label); text('wb-ui-progress-text', p.text);
-        $('wb-ui-fill').style.width = `${Math.max(0, Math.min(100, p.percent))}%`;
-        $('wb-ui-progressbar').setAttribute('aria-valuenow', String(Math.round(p.percent)));
-        $('wb-ui-progressbar').setAttribute('aria-label', p.label);
       }
       $('wb-start').hidden = !model.home.showStart;
       $('wb-stop').hidden = !model.home.showStop;

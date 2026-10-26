@@ -2122,6 +2122,20 @@
     return true;
   });
 
+  // Settings are shared by all pages. Keep the task's default in sync without
+  // changing ownership, generations, completed records or forced retry targets.
+  chrome.storage.onChanged?.addListener((changes, area) => {
+    if (area !== 'local' || !Object.hasOwn(changes || {}, 'wb-playback-target')) return;
+    serial(async () => {
+      const value = (await chrome.storage.local.get('wb-playback-target'))['wb-playback-target'];
+      const target = validTargetPercent(value) ? value : 100;
+      const job = await read();
+      if (!job?.singlePass || ['idle', 'resetting'].includes(job.phase) || job.targetPercent === target) return;
+      job.targetPercent = target;
+      await save(job);
+    }).catch(console.error);
+  });
+
   chrome.tabs.onCreated.addListener(tab => {
     const createdAt = Date.now();
     serial(async () => {

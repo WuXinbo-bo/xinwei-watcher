@@ -32,6 +32,17 @@ async function prepared(targetPercent = 80, options = {}) {
   return { c, id, job: r.job };
 }
 
+test('shared preference updates task default without changing resource evidence or ownership', async()=>{
+  const {c,id,job}=await prepared();
+  c.storage.local['wb-playback-target']=95;
+  c.onStorageChanged.fire({'wb-playback-target':{newValue:95}},'local');
+  const r=await c.request(id,'page','get');
+  assert.equal(r.job.targetPercent,95);assert.equal(r.job.generation,job.generation);
+  assert.equal(r.job.ownerTabId,job.ownerTabId);
+  assert.equal(r.job.candidates[0].records.video.effectiveTarget,80);
+  assert.equal(r.job.candidates[0].records.video.confirmed,false);
+});
+
 test('target checkpoint advances without inventing natural end or platform confirmation', async () => {
   const { c, id, job } = await prepared();
   const r = await c.request(id, 'page', 'record', {

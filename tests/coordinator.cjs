@@ -34,8 +34,9 @@ function coordinator(options = {}) {
     async set(values) { if (failStorage) throw new Error('disk error'); Object.assign(storage[name], clone(values)); }
   });
   const onCreated = event(), onRemoved = event(), onNavigation = event();
+  const onStorageChanged = event();
   const chrome = {
-    storage: { session: area('session'), local: area('local') },
+    storage: { session: area('session'), local: area('local'), onChanged: onStorageChanged },
     runtime: { onMessage: { addListener(fn) { messageListener = fn; } } },
     tabs: {
       onCreated, onRemoved,
@@ -104,7 +105,7 @@ function coordinator(options = {}) {
     };
   };
   return {
-    addTab, request, connect, tabs, storage, navigation, removed, reloads, onNavigation, onTabRemoved: onRemoved,
+    addTab, request, connect, tabs, storage, navigation, removed, reloads, onNavigation, onTabRemoved: onRemoved, onStorageChanged,
     failStorage: () => { failStorage = true; },
     restartWorker: () => { vm.runInNewContext(fs.readFileSync('background.js', 'utf8'), globals); },
     restartBrowser: () => { storage.session = {}; },

@@ -119,7 +119,10 @@ async function main() {
     await page.locator('#wb-overview-more summary').click();
     await navigate('logs'); await snap('09-logs');
     await navigate('settings'); await snap('10-settings');
-    await page.locator('#wb-playback-target').fill('92'); await page.locator('#wb-playback-target').dispatchEvent('change');
+    await page.locator('[data-target-preset="80"]').click();
+    await page.waitForFunction(() => document.getElementById('wb-playback-target').value === '80');
+    await page.locator('#wb-playback-target').fill('92');
+    assert.equal(await evaluate('__wbStudyTest.getPlaybackTarget()'),92);
     await page.waitForFunction(() => document.getElementById('wb-setting-feedback').textContent === '已保存');
     await page.locator('#wb-reset-menu').click(); await snap('11-reset-confirm');
     await page.locator('#wb-reset-cancel').click();
@@ -150,13 +153,17 @@ async function main() {
     ];
     await navigate('home');
     assert.match(await page.locator('#wb-home-summary').textContent(), /已完成 0 门.*待完成 3 门/s);
-    assert.equal(await page.locator('#wb-home-summary [role=progressbar]').getAttribute('aria-valuenow'), '0');
+    assert.equal(await page.locator('#wb-home-task-progress [role=progressbar]').getAttribute('aria-valuenow'), '0');
+    assert.equal(await page.locator('#wb-home-summary [role=progressbar]').count(), 2);
+    assert.equal(await page.locator('#wb-ui-progress [role=progressbar]').count(), 0);
+    assert.ok((await page.locator('#wb-drag').boundingBox()).height <= 44);
+    assert.equal(await page.locator('#wb-ui-nav').isVisible(), false);
     assert.equal(await page.locator('#wb-home-course-progress [role=progressbar]').getAttribute('aria-valuenow'), '33');
     await page.locator('#wb-home-summary [data-course-filter=pending]').click();
     assert.equal(await page.locator('[data-course]').count(), 3);
     await page.locator('.wb-view[data-view=courses] [data-course-filter=complete]').click();
     assert.match(await page.locator('.wb-view[data-view=courses]').textContent(), /暂无符合此分类/);
-    await navigate('home'); await page.locator('#wb-ui-directory').click();
+    await navigate('home'); await page.locator('[data-current-directory]').click();
     assert.equal(await page.locator('.wb-view[data-view=course] h2').textContent(), '操作系统原理');
     await navigate('home');
     assert.equal(await evaluate('__wbStudyTest.state.job.running'), false);
@@ -164,12 +171,12 @@ async function main() {
     for (const [name, patch, statePatch, expected] of scenarios) {
       await evaluate(`(() => {const s=__wbStudyTest.state; Object.assign(s,{mode:'paused',tabId:1,startPending:false,pausePending:false,routeRecoveryPending:false,storageFailed:false,resetPending:false},${JSON.stringify(statePatch)}); Object.assign(s.job,{reason:'',targetPurpose:'play'},${JSON.stringify(patch)}); s.job.candidates[0].status=${JSON.stringify(statePatch.retry ? 'retry' : 'inspected')}; document.getElementById('wb-current').textContent=${JSON.stringify(statePatch.legacy || '')}; document.getElementById('wb-status').textContent=''; __wbStudyTest.updateTaskControls();})()`);
       assert.equal(await page.locator('#wb-ui-status').textContent(), expected);
-      if (name === 'scanning') assert.equal(await page.locator('#wb-home-summary [role=progressbar]').count(), 0);
+      if (name === 'scanning') assert.equal(await page.locator('#wb-home-task-progress [role=progressbar]').count(), 0);
       await snap(`state-${name}`);
     }
     const savedJob = await evaluate('JSON.parse(JSON.stringify(__wbStudyTest.state.job))');
     await evaluate(`(() => {const s=__wbStudyTest.state;s.job.phase='finished';s.job.running=false;s.job.candidates.forEach(c=>{c.status='complete';c.remaining=0;c.unfinished=[];c.failures=[];Object.values(c.records||{}).forEach(r=>{r.confirmed=true;delete r.error;});});__wbStudyTest.updateTaskControls();})()`);
-    assert.equal(await page.locator('#wb-home-summary [role=progressbar]').getAttribute('aria-valuenow'), '100');
+    assert.equal(await page.locator('#wb-home-task-progress [role=progressbar]').getAttribute('aria-valuenow'), '100');
     await snap('state-all-completed');
     await evaluate(`(() => {__wbStudyTest.state.job.candidates=[];__wbStudyTest.updateTaskControls();})()`);
     assert.equal(await page.locator('#wb-home-summary [role=progressbar]').count(), 0);

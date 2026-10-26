@@ -101,6 +101,7 @@
     playbackTargetPendingWrites: 0,
     playbackTargetPendingChange: null,
     playbackTargetSync: null,
+    activePlaybackTarget: null,
     panelExpanded: false,
     uiController: null,
     uiDiscoveredCourses: [],
@@ -1166,7 +1167,11 @@
 
   function renderPlaybackTarget() {
     const input = document.getElementById('wb-playback-target');
-    if (input) input.value = String(getPlaybackTarget());
+    if (input && document.activeElement !== input) input.value = String(getPlaybackTarget());
+    for (const button of document.querySelectorAll('[data-target-preset]')) {
+      button.setAttribute('aria-pressed', String(Number(button.dataset.targetPreset) === getPlaybackTarget()));
+    }
+    state.uiController?.schedule();
   }
 
   function savePlaybackTarget(value) {
@@ -1275,7 +1280,7 @@
     const legacyTask = document.getElementById('wb-current')?.textContent || '';
     const legacyStatus = document.getElementById('wb-status')?.textContent || '';
     const home = { status: '准备就绪', title: '从课程扫描开始', subtitle: '自动识别正在上的课程与音视频',
-      caption: `播放目标 ${getPlaybackTarget()}% · 可在设置中调整`, notice: '', tone: 'neutral',
+      caption: '', targetBadge: `${getPlaybackTarget()}% 后切换`, notice: '', tone: 'neutral',
       showStart: true, showStop: false, showResults: false, resetRetry: false, progress: null };
     if (running) {
       home.tone = 'active'; home.showStart = false; home.showStop = isTaskPage() || state.startPending || state.running;
@@ -1299,7 +1304,12 @@
         const resource = candidate?.directory?.items?.find(i => i.key === activeResourceKey);
         home.subtitle = resource ? `${resource.title} · ${{ video: '视频', audio: '音频', media: '音视频' }[resource.mediaType] || '资源'}` : legacyTask;
         if (media) home.progress = { label: '当前播放', text: `${assistantTime(media.position)} / ${assistantTime(media.duration)}`, percent: media.position / media.duration * 100 };
-        home.caption = `播放目标 ${job.targetPercent ?? getPlaybackTarget()}% · 完成状态由平台另行确认`;
+        const activeTarget = state.activePlaybackTarget;
+        const record = candidate?.records?.[activeResourceKey];
+        const currentTarget = activeTarget?.courseKey === activeCourseKey && activeTarget.key === activeResourceKey ? activeTarget : null;
+        const forced = currentTarget ? currentTarget.forced :
+          record?.effectiveTarget === 100 && ((record.recoveryAttempts || 0) + (record.finalAttempts || 0) > 0);
+        home.targetBadge = forced ? '100% 重试' : currentTarget?.settled ? `${currentTarget.target}% 已达标` : `${getPlaybackTarget()}% 后切换`;
         if (/核对|复核|刷新/.test(legacyTask) || /verify|refresh/.test(candidate?.coursePhase || '')) {
           home.status = '正在核对平台状态'; home.subtitle = legacyTask; home.progress = null;
         } else if (candidate?.currentResource?.stage === 'opening' || /正在打开：|正在切换/.test(legacyTask)) {
@@ -1350,6 +1360,7 @@
       home.showStart = false; home.showStop = false; home.showResults = false; home.resetRetry = !state.resetPending; home.tone = 'warning';
     }
     if (getRoute() === 'other') home.showStart = false;
+    if (job?.targetPurpose === 'inspect' || (job && job.phase !== 'course')) home.targetBadge = '';
     // Counts are presentation only. Unknown totals stay unknown during scanning.
     const scanning = job && ['go-agent', 'entry-home', 'scan-home'].includes(job.phase);
     const totals = courses.map(course => {
@@ -1436,14 +1447,41 @@
     assistantButton.appendChild(assistantImage);
     document.body.appendChild(assistantButton);
     const targetInput = box.querySelector('#wb-playback-target');
-    targetInput.addEventListener('change', () => {
+    let targetFeedbackRevision = 0;
+    const applyTarget = value => {
+      const revision = ++targetFeedbackRevision;
       controller.feedback('正在保存…');
-      savePlaybackTarget(targetInput.value).then(saved => {
-        controller.feedback(saved ? '已保存' : '本页已应用，扩展存储不可用', !saved);
+      savePlaybackTarget(value).then(saved => {
+        if (revision !== targetFeedbackRevision) return;
+        const active = state.activePlaybackTarget;
+        const message = active?.settled ? '已保存；后续学习项生效' : active?.forced ? '已保存；当前重试保持 100%' : active ? '已应用到当前播放' : '已保存';
+        controller.feedback(saved ? message : '本页已应用，扩展存储不可用', !saved);
       }).catch(() => {
+        if (revision !== targetFeedbackRevision) return;
         controller.feedback('保存失败，本页仍使用当前设置', true);
         log('播放目标保存失败，本页仍使用当前设置', 'err');
       });
+    };
+    targetInput.addEventListener('input', () => {
+      const value = Number(targetInput.value);
+      if (targetInput.value.trim() && Number.isInteger(value) && value >= 80 && value <= 100) applyTarget(value);
+      else controller.feedback('请输入 80–100 的整数');
+    });
+    targetInput.addEventListener('change', () => {
+      if (!targetInput.value.trim() || !Number.isFinite(Number(targetInput.value))) {
+        targetInput.value = String(getPlaybackTarget());
+        controller.feedback('请输入 80–100 的整数');
+        return;
+      }
+      const target = normalizePlaybackTarget(targetInput.value);
+      targetInput.value = String(target);
+      if (target !== getPlaybackTarget()) applyTarget(target);
+    });
+    box.addEventListener('click', event => {
+      const preset = event.target.closest('[data-target-preset]');
+      if (!preset) return;
+      targetInput.value = preset.dataset.targetPreset;
+      applyTarget(Number(preset.dataset.targetPreset));
     });
     observePlaybackTargetChanges();
     state.playbackTargetReady = loadPlaybackTarget();
@@ -3005,9 +3043,14 @@
     const title = itemTitle(item);
     const singlePass = options.singlePass === true;
     const savedRecord = state.processedItems.get(key) || {};
-    const effectiveTarget = singlePass
+    let effectiveTarget = singlePass
       ? normalizePlaybackTarget(options.targetPercent ?? savedRecord.effectiveTarget ?? getPlaybackTarget())
       : 100;
+    const forcedTarget = !singlePass || options.forceTarget === true ||
+      savedRecord.effectiveTarget === 100 && ((savedRecord.recoveryAttempts || 0) + (savedRecord.finalAttempts || 0) > 0);
+    if (forcedTarget) effectiveTarget = 100;
+    let appliedTargetRevision = state.playbackTargetRevision;
+    let appliedPreference = getPlaybackTarget();
     if (currentCourseKey() !== courseKey) {
       throw new RecoverableError('页面已离开当前课程，正在返回原课程', 'navigation');
     }
@@ -3077,7 +3120,7 @@
     log(`已打开：${title}`);
     await rememberItem(key, {
       ...state.processedItems.get(key), title, confirmed: false, ended: false,
-      started: true, playbackAttempt: attempt
+      started: true, ...(singlePass ? { effectiveTarget } : {}), playbackAttempt: attempt
     });
     const reports = new Map();
     let lastPauseAt = 0;
@@ -3396,6 +3439,8 @@
       await rememberItem(key, { ...state.processedItems.get(key), playbackAttempt: attempt });
       return true;
     };
+    const activeTarget = { key, courseKey, forced: forcedTarget, target: effectiveTarget };
+    state.activePlaybackTarget = activeTarget;
     try {
       assertRunning(epoch);
       checkPlaybackState();
@@ -3436,9 +3481,25 @@
       while (!media.ended || recovery?.outcome === 'awaiting-website-report') {
         assertRunning(epoch);
         checkPlaybackState();
+        if (singlePass && !forcedTarget && appliedTargetRevision !== state.playbackTargetRevision && state.playbackTargetSync) {
+          await state.playbackTargetSync;
+          assertRunning(epoch);
+          checkPlaybackState();
+        }
+        if (singlePass && !forcedTarget && (appliedTargetRevision !== state.playbackTargetRevision || appliedPreference !== getPlaybackTarget())) {
+          appliedTargetRevision = state.playbackTargetRevision;
+          appliedPreference = effectiveTarget = getPlaybackTarget();
+          activeTarget.target = effectiveTarget;
+          await rememberItem(key, { ...state.processedItems.get(key), effectiveTarget });
+          assertRunning(epoch);
+          checkPlaybackState();
+          // A newer selection may have arrived while the checkpoint was saved.
+          if (appliedTargetRevision !== state.playbackTargetRevision) continue;
+        }
         if (singlePass && effectiveTarget < 100 && !media.ended &&
           !media.paused && !media.seeking && !progressGap &&
           media.duration > 0 && media.currentTime / media.duration >= effectiveTarget / 100) {
+          activeTarget.settled = true;
           const result = {
             ...state.processedItems.get(key), title, ended: false,
             confirmed: false, targetReached: true, deferred: false,
@@ -3554,6 +3615,7 @@
       assertRunning(epoch);
       checkPlaybackState();
       await recordNaturalEnd();
+      activeTarget.settled = true;
       const confirmed = singlePass ? false : Boolean(await waitUntil(() => {
         checkPlaybackState();
         const fresh = getMenuItems().find(el => getItemKey(el) === key);
@@ -3601,6 +3663,7 @@
       }
       throw error;
     } finally {
+      if (state.activePlaybackTarget === activeTarget) state.activePlaybackTarget = null;
       for (const type of eventTypes) media.removeEventListener(type, observeMedia);
       for (const type of inputTypes) document.removeEventListener(type, observeInput, { capture: true });
       reportObserver?.disconnect();
@@ -3944,7 +4007,7 @@
 
       try {
         const result = await playItemToEnd(item, epoch, courseKey, {
-          singlePass: true, targetPercent: 100, forceOpen
+          singlePass: true, targetPercent: 100, forceTarget: true, forceOpen
         });
         forceOpen = true;
         const latestItem = getMenuItems().find(el => getItemKey(el) === key) || item;
