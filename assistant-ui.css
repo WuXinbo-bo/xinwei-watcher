@@ -31,11 +31,13 @@
 #wb-study-ui[data-tone="warning"] .wb-status-line{color:var(--wb-warning)}
 #wb-study-ui[data-tone="error"] .wb-status-line{color:var(--wb-danger)}
 #wb-study-ui[data-tone="success"] .wb-status-line{color:var(--wb-success)}
+#wb-study-ui[data-tone="neutral"] .wb-status-line{color:var(--wb-muted)}
 #wb-study-ui .wb-title{font-size:16px;line-height:1.5;font-weight:600;margin:0;letter-spacing:-.01em;overflow-wrap:anywhere}
 #wb-study-ui .wb-title:focus{outline:none}
 #wb-study-ui .wb-subtitle{font-size:13px;color:var(--wb-muted);margin:5px 0 0;overflow-wrap:anywhere}
 #wb-study-ui .wb-caption{font-size:12px;color:var(--wb-muted);margin:9px 0 0;overflow-wrap:anywhere}
 #wb-study-ui .wb-notice{font-size:12px;padding:10px 11px;margin-top:12px;background:var(--wb-warning-bg);border-radius:9px;color:var(--wb-warning);overflow-wrap:anywhere}
+#wb-study-ui .wb-notice.wb-error{color:var(--wb-danger);border-left:2px solid var(--wb-danger);background:var(--wb-soft)}
 #wb-study-ui .wb-note{font-size:12px;color:var(--wb-muted);background:var(--wb-soft);padding:10px 11px;border-radius:9px;margin-top:12px}
 #wb-study-ui .wb-progress{margin-top:18px}
 #wb-study-ui .wb-progress-label{display:flex;justify-content:space-between;align-items:center;gap:12px;font-size:12px;color:var(--wb-muted);font-variant-numeric:tabular-nums}
@@ -48,18 +50,19 @@
 #wb-study-ui .wb-metric>span,#wb-study-ui .wb-metric>small{font-size:12px;color:var(--wb-muted)}
 #wb-study-ui .wb-metric>strong{font-size:16px;font-weight:600;font-variant-numeric:tabular-nums;overflow-wrap:anywhere;line-height:1.4}
 #wb-study-ui button.wb-metric:hover{background:var(--wb-accent-soft)}
+#wb-study-ui .wb-metric[data-attention="true"]>strong{color:var(--wb-warning)}
 #wb-study-ui .wb-overview-current{border-bottom:1px solid var(--wb-border);padding:13px 0}
 #wb-study-ui .wb-overview-current>p:not(.wb-caption){margin:5px 0 0;font-size:13px;font-weight:500;overflow-wrap:anywhere}
 #wb-study-ui .wb-more{margin-top:16px;border-top:1px solid var(--wb-border);padding-top:4px}
 #wb-study-ui .wb-more>summary{padding:10px 0;font-size:12px;color:var(--wb-muted);cursor:pointer}
-#wb-study-ui .btn{width:100%;min-height:38px;border:1px solid var(--wb-border);border-radius:9px;padding:9px 12px;font-weight:500;background:var(--wb-bg);color:var(--wb-fg);transition:background .12s ease,transform .12s ease}
+#wb-study-ui .btn{width:100%;min-height:40px;border:1px solid var(--wb-border);border-radius:9px;padding:9px 12px;font-weight:500;background:var(--wb-bg);color:var(--wb-fg);transition:background .12s ease,transform .12s ease}
 #wb-study-ui .btn:hover:not(:disabled){background:var(--wb-soft)}
 #wb-study-ui .btn:active:not(:disabled){transform:translateY(1px)}
 #wb-study-ui .btn.primary{background:var(--wb-accent);color:#fff;border-color:transparent}
 #wb-study-ui .btn.primary:hover:not(:disabled){background:#2c58bf}
 #wb-study-ui .btn.danger{color:var(--wb-danger)}
 #wb-study-ui .wb-nav{display:flex;justify-content:space-between;align-items:center;gap:6px;padding:8px 12px;border-top:1px solid var(--wb-border);flex:0 0 auto}
-#wb-study-ui .wb-link{border:0;background:transparent;color:var(--wb-muted);padding:5px 2px;min-height:28px;font-size:12px;text-align:left}
+#wb-study-ui .wb-link{border:0;background:transparent;color:var(--wb-muted);padding:5px 2px;min-height:32px;font-size:12px;text-align:left}
 #wb-study-ui .wb-link:hover{color:var(--wb-accent)}
 #wb-study-ui .wb-back{display:inline-flex;align-items:center;gap:4px;margin-bottom:12px}
 #wb-study-ui .wb-back svg{width:13px;height:13px}
@@ -71,7 +74,7 @@
 #wb-study-ui .wb-row-main{flex:1;min-width:0;overflow-wrap:anywhere}
 #wb-study-ui .wb-row-title{font-weight:500}
 #wb-study-ui .wb-row-meta{display:block;font-size:12px;color:var(--wb-muted);margin-top:4px}
-#wb-study-ui .wb-row-status{font-size:11px;color:var(--wb-muted);flex-shrink:0;max-width:78px;padding-top:1px;text-align:right}
+#wb-study-ui .wb-row-status{font-size:12px;color:var(--wb-muted);flex-shrink:0;max-width:78px;padding-top:1px;text-align:right}
 #wb-study-ui .wb-row-status[data-active="true"]{color:var(--wb-accent)}
 #wb-study-ui .wb-media-icon{width:17px;height:17px;color:var(--wb-muted);margin-top:3px;flex-shrink:0}
 #wb-study-ui .wb-chapter{margin:14px 0 0;border:0}

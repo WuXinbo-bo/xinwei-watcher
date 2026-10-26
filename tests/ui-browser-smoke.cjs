@@ -31,6 +31,7 @@ async function main() {
           '</span><i class="' + (i === 1 ? 'audio' : 'video') + '-icon"></i><div class="video-duration">10 分 00 秒</div><span class="lecture-status"><i class="unStart-icon"></i></span></li>').join('') +
         '</ul></li></ul></div><video></video></main>'
     }));
+    await context.route('https://88cf.scxai.top/**', route => route.fulfill({ contentType: 'text/html', body: '<title>赞助链接本地测试</title>' }));
     const page = await context.newPage();
     page.on('pageerror', error => errors.push(error.message));
     const cdp = await context.newCDPSession(page), contexts = [];
@@ -57,7 +58,28 @@ async function main() {
     assert.equal((await panel.boundingBox()).width, 310);
     assert.equal(await page.locator('#wb-log').isVisible(), false);
     assert.equal(await page.locator('#wb-playback-target').isVisible(), false);
-    await snap('01-ready'); checks.push('real extension, local image, compact home');
+    assert.equal(await panel.getAttribute('aria-label'), '芯位教育课堂助手');
+    assert.equal(await page.locator('#wb-drag [aria-label=设置]').getAttribute('title'), '设置');
+    const sponsor = page.locator('#wb-sponsor'), sponsorCopy = page.locator('#wb-sponsor-message');
+    assert.equal(await sponsor.isVisible(), true);
+    assert.equal(await sponsor.evaluate(el => el.previousElementSibling.id), 'wb-drag');
+    const sponsorHeight = (await sponsor.boundingBox()).height;
+    await snap('01-ready'); checks.push('real extension, corrected brand, gear icon, local image, compact home');
+    const initialCopy = await sponsorCopy.textContent();
+    await page.mouse.move(10, 10);
+    await page.waitForFunction(text => document.getElementById('wb-sponsor-message').textContent !== text, initialCopy, { timeout: 10000 });
+    assert.equal((await sponsor.boundingBox()).height, sponsorHeight);
+    await page.locator('#wb-sponsor-toggle').click();
+    assert.equal(await page.locator('#wb-sponsor-toggle').getAttribute('aria-pressed'), 'true');
+    const pausedCopy = await sponsorCopy.textContent();
+    await page.locator('#wb-start').focus(); await page.mouse.move(10, 10);
+    await page.waitForTimeout(7300); assert.equal(await sponsorCopy.textContent(), pausedCopy);
+    await page.locator('#wb-sponsor-toggle').click();
+    const popupPromise = context.waitForEvent('page');
+    await page.locator('#wb-sponsor-link').click(); const popup = await popupPromise;
+    await popup.waitForLoadState(); assert.equal(popup.url(), 'https://88cf.scxai.top/'); await popup.close();
+    await page.bringToFront(); await page.mouse.move(10, 10);
+    checks.push('sponsor rotation, fixed height, explicit pause, safe external link');
     // Stop only synthetic-document polling before seeding display states. No task is started.
     await page.waitForTimeout(400);
     await evaluate(`(() => {
@@ -84,9 +106,18 @@ async function main() {
     await navigate('courses'); await page.locator('[data-course="0"]').click(); await snap('04-chapters');
     await page.locator('[data-resource="1"]').click(); await snap('05-resource');
     assert.match(await page.locator('.wb-view[data-view=resource]').textContent(), /平台确认尚未确认/);
+    assert.equal(await page.locator('.wb-view[data-view=resource] details').evaluate(el => el.open), false);
+    await page.locator('.wb-view[data-view=resource] summary').click(); await snap('05b-resource-explanation');
+    await page.locator('.wb-view[data-view=resource] summary').click();
     await navigate('courses'); await page.locator('[data-course="2"]').click(); await page.locator('[data-resource]').click(); await snap('06-resource-error');
     await navigate('alerts'); await snap('07-alerts');
-    await navigate('details'); await snap('08-details');
+    await navigate('details');
+    assert.equal(await page.locator('.wb-metric').count(), 3);
+    assert.equal(await page.locator('#wb-overview-more').evaluate(el => el.open), false);
+    assert.equal(await page.locator('#wb-count').isVisible(), false);
+    await snap('08-details');
+    await page.locator('#wb-overview-more summary').click(); await snap('08b-more-statistics');
+    await page.locator('#wb-overview-more summary').click();
     await navigate('logs'); await snap('09-logs');
     await navigate('settings'); await snap('10-settings');
     await page.locator('#wb-playback-target').fill('92'); await page.locator('#wb-playback-target').dispatchEvent('change');
@@ -102,6 +133,11 @@ async function main() {
       ['opening', {phase:'opening',running:true,targetPurpose:'play'}, {}, '正在打开课程'],
       ['inspecting', {phase:'course',running:true,targetPurpose:'inspect'}, {}, '正在统计音视频'],
       ['learning', {phase:'course',running:true,targetPurpose:'play'}, {}, '正在学习'],
+      ['resource-switching', {phase:'course',running:true}, {legacy:'正在打开：沟通与关怀'}, '正在切换资源'],
+      ['waiting', {phase:'course',running:true}, {legacy:'等待播放器加载'}, '等待资源就绪'],
+      ['retrying', {phase:'course',running:true}, {retry:true}, '等待稍后重试'],
+      ['starting', {phase:'paused',running:false}, {startPending:true}, '正在开始'],
+      ['pausing', {phase:'course',running:true}, {pausePending:true}, '正在暂停'],
       ['verifying', {phase:'course',running:true,targetPurpose:'play'}, {legacy:'正在核对平台完成状态'}, '正在核对平台状态'],
       ['recovering', {phase:'course',running:true}, {routeRecoveryPending:true}, '正在自动恢复'],
       ['paused', {phase:'paused',running:false}, {}, '已暂停'],
@@ -115,7 +151,7 @@ async function main() {
     ];
     await navigate('home');
     for (const [name, patch, statePatch, expected] of scenarios) {
-      await evaluate(`(() => {const s=__wbStudyTest.state; Object.assign(s,{mode:'paused',tabId:1,routeRecoveryPending:false,storageFailed:false,resetPending:false},${JSON.stringify(statePatch)}); Object.assign(s.job,{reason:'',targetPurpose:'play'},${JSON.stringify(patch)}); document.getElementById('wb-current').textContent=${JSON.stringify(statePatch.legacy || '')}; document.getElementById('wb-status').textContent=''; __wbStudyTest.updateTaskControls();})()`);
+      await evaluate(`(() => {const s=__wbStudyTest.state; Object.assign(s,{mode:'paused',tabId:1,startPending:false,pausePending:false,routeRecoveryPending:false,storageFailed:false,resetPending:false},${JSON.stringify(statePatch)}); Object.assign(s.job,{reason:'',targetPurpose:'play'},${JSON.stringify(patch)}); s.job.candidates[0].status=${JSON.stringify(statePatch.retry ? 'retry' : 'inspected')}; document.getElementById('wb-current').textContent=${JSON.stringify(statePatch.legacy || '')}; document.getElementById('wb-status').textContent=''; __wbStudyTest.updateTaskControls();})()`);
       assert.equal(await page.locator('#wb-ui-status').textContent(), expected);
       await snap(`state-${name}`);
     }
@@ -130,6 +166,9 @@ async function main() {
     await page.locator('#wb-reset-menu').scrollIntoViewIfNeeded(); assert.equal(await page.locator('#wb-reset-menu').isVisible(), true); await snap('14-short');
     await page.setViewportSize({ width: 1280, height: 900 }); await page.emulateMedia({ colorScheme:'dark', reducedMotion:'reduce' }); await navigate('courses');
     assert.equal(await page.locator('.wb-view[data-view=courses]').evaluate(el => getComputedStyle(el).animationName), 'none');
+    const reducedCopy = await sponsorCopy.textContent();
+    await page.waitForTimeout(7300); assert.equal(await sponsorCopy.textContent(), reducedCopy);
+    assert.equal(await page.locator('#wb-sponsor-toggle').isVisible(), false);
     await snap('15-dark-reduced-motion'); checks.push('narrow and short viewport, dark mode, reduced motion');
     await navigate('home'); await page.locator('#wb-min').click();
     assert.equal(await evaluate('__wbStudyTest.state.job.running'), true);

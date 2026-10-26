@@ -205,6 +205,31 @@ test('idle inner pages omit the task strip, while paused tasks keep their return
   } finally { close(f); }
 });
 
+test('status explanations stay on demand and live updates preserve keyboard focus and disclosure state', () => {
+  const f = fixture([mediaItem('视频一'), mediaItem('音频一', 'audio')]);
+  try {
+    const { ui, job, box, body } = setup(f);
+    ui.navigate('courses'); box.querySelector('[data-course="0"]').click();
+    const back = box.querySelector('.wb-view[data-view=course] .wb-back'); back.focus();
+    const item = job.candidates[0].directory.items[0];
+    job.candidates[0].records[item.key] = { error: '此前加载失败' }; ui.render();
+    assert.equal(f.window.document.activeElement.dataset.uiView, 'courses');
+    box.querySelector('[data-resource="0"]').click();
+    let page = box.querySelector('.wb-view[data-view=resource]');
+    assert.equal(page.querySelector('details').open, false);
+    assert.match(page.querySelector('.wb-error').textContent, /需处理/);
+    page.querySelector('details').open = true; page.querySelector('summary').focus(); body.scrollTop = 31;
+    job.candidates[0].records[item.key].confirmed = true; ui.render();
+    page = box.querySelector('.wb-view[data-view=resource]');
+    assert.equal(page.querySelector('.wb-error'), null, 'an old failure must not override platform confirmation');
+    assert.match(page.querySelector('details').textContent, /此前加载失败/);
+    assert.equal(page.querySelector('details').open, true);
+    assert.equal(f.window.document.activeElement.tagName, 'SUMMARY'); assert.equal(body.scrollTop, 31);
+    ui.navigate('course'); box.querySelector('[data-resource="1"]').click();
+    assert.equal(box.querySelector('.wb-view[data-view=resource] details').open, false, 'each resource has independent explanation state');
+  } finally { close(f); }
+});
+
 function preferenceChrome(values, blocked = false) {
   return {
     runtime: { sendMessage: async () => ({ ok: true, job: null, tabId: 1 }) },

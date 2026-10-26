@@ -67,7 +67,7 @@
           </div>
           <div class="wb-overview-current" id="wb-overview-current" hidden><span class="wb-caption" id="wb-overview-phase"></span><p id="wb-overview-course"></p><p class="wb-caption" id="wb-overview-resource" hidden></p></div>
           <div class="wb-actions wb-actions-inline">${button('待处理事项', 'alerts')}${button('运行日志', 'logs')}</div>
-          <details class="wb-more" id="wb-overview-more"><summary>更多统计与说明</summary>
+          <details class="wb-more" id="wb-overview-more" data-ui-disclosure="overview"><summary>更多统计与说明</summary>
             <div id="wb-ui-statistics"></div>
             <div class="kv"><span>课程任务</span><span id="wb-job-summary">尚未开始</span></div>
             <div class="kv"><span>本轮自然结束</span><span id="wb-count">0</span></div>
@@ -103,7 +103,7 @@
     const body = $('wb-body');
     let view = 'home', selectedCourse = null, selectedResource = null, model = null;
     let contentSignature = '', scheduled = false, runId = null;
-    const scroll = new Map(), chapters = new Map();
+    const scroll = new Map(), chapters = new Map(), disclosures = new Map();
     let restore = null, storageKey = null, preferencesReady = false, viewRevision = 0;
     const sponsor = $('wb-sponsor'), sponsorLink = $('wb-sponsor-link'), sponsorToggle = $('wb-sponsor-toggle');
     const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)');
@@ -194,6 +194,7 @@
     function coursesPage() {
       const inspected = model.courses.filter(c => Array.isArray(c.directory?.items) || Number.isInteger(c.total)).length;
       return title('全部课程') + `<p class="wb-caption">${model.courses.length ? `${model.courses.length} 门课程 · 已统计 ${inspected} 门` : '尚未建立课程列表'}</p>` +
+        (model.courses.length ? '<p class="wb-caption">仅查看目录，不会切换播放。</p>' : '') +
         (model.courses.length ? model.courses.map((c, index) => `<button class="wb-course-row" type="button" data-course="${index}"><span class="wb-row-main"><span class="wb-row-title">${esc(c.title)}</span><span class="wb-row-meta">${esc(courseCount(c))}</span></span><span class="wb-row-status" data-active="${model.activeCourseKey === courseKey(c)}">${esc(courseLabel(c))} ›</span></button>`).join('') :
           note(model.job?.phase === 'finished' ? '没有发现可处理的课程。请在网站核对课程状态。' : '开始任务后将扫描正在上的课程。扫描期间，已发现的课程会逐步出现在这里。'));
     }
@@ -225,7 +226,6 @@
       }
       if (others.length) html += `<details class="wb-chapter"><summary>其他资源 · ${others.length} 项，不自动处理</summary>${others.map(i => `<div class="wb-row-meta">${esc(i.title)} · ${types[i.mediaType] || '其他'}</div>`).join('')}</details>`;
       if (!media.length) html += note('这门课只有其他类型的资源，没有可自动处理的音视频。');
-      html += '<p class="wb-caption">查看目录不会切换播放或改变任务顺序。</p>';
       return html;
     }
     function resourcePage() {
@@ -233,16 +233,17 @@
       if (!item) return title('资源已更新', 'course', '课程目录') + note('当前任务中已无法确认该条目，请回到目录重新查看。');
       const record = c.records?.[item.key];
       const current = c.live && model.activeResourceKey === item.key;
+      const confirmed = Boolean(record?.confirmed || item.observedCompleted);
       let html = title(item.title, 'course', '课程目录') + `<p class="wb-caption">${esc(c.title)}${item.chapterTitle ? ` · ${esc(item.chapterTitle)}` : ''}</p>`;
       html += kv('资源类型', types[item.mediaType] || '其他') + kv('时长', time(item.durationSeconds)) + kv('任务记录', resourceStatus(item, c));
       if (current && model.media) html += kv('当前播放位置', time(model.media.position));
       html += kv('播放目标', `${record?.effectiveTarget ?? model.job?.targetPercent ?? model.target}%`);
       html += kv('自然结束', record?.ended === true ? '已记录' : '尚无记录');
-      html += kv('平台确认', record?.confirmed || item.observedCompleted ? '已确认' : '尚未确认');
-      if (record?.error) html += `<p class="wb-notice">${esc(record.error)}</p>`;
+      html += kv('平台确认', confirmed ? '已确认' : '尚未确认');
+      if (record?.error && !confirmed) html += `<p class="wb-notice wb-error">需处理：${esc(record.error)}</p>`;
       if (record?.recovery?.attempts) html += kv('恢复尝试', record.recovery.attempts);
-      html += note('达到播放目标不等于自然结束，也不等于平台已确认完成。');
-      if (c.live && item.locatable) html += `<div class="wb-actions"><button class="btn" type="button" data-ui-locate="${esc(item.key)}">定位到网页条目</button></div>`;
+      if (c.live && item.locatable) html += `<div class="wb-actions"><button class="btn" type="button" data-ui-locate="${esc(item.key)}" title="仅滚动到网页条目，不切换播放">定位到网页条目</button></div>`;
+      html += `<details class="wb-more" data-ui-disclosure="${esc(`resource:${selectedCourse}:${selectedResource}`)}"><summary>状态说明</summary><p class="wb-caption">达到播放目标不等于自然结束，也不等于平台已确认完成。</p>${record?.error && confirmed ? `<p class="wb-caption">此前记录：${esc(record.error)}。平台当前已确认。</p>` : ''}</details>`;
       return html;
     }
     function aboutPage() {
@@ -260,23 +261,46 @@
       else return;
       const signature = `${view}:${html}`;
       if (signature === contentSignature) return;
+      const page = box.querySelector(`.wb-view[data-view="${view}"]`);
       const top = body.scrollTop;
       const focus = box.ownerDocument.activeElement;
-      const focusKey = focus?.getAttribute('data-resource') ?? focus?.getAttribute('data-course');
-      const focusAttr = focus?.hasAttribute('data-resource') ? 'data-resource' : 'data-course';
-      box.querySelector(`[data-view="${view}"]`).innerHTML = html;
+      const focused = page.contains(focus);
+      const focusAttr = focused && ['data-resource', 'data-course', 'data-ui-view', 'data-ui-locate'].find(attr => focus.hasAttribute(attr));
+      const focusKey = focusAttr ? focus.getAttribute(focusAttr) : null;
+      const summaryParent = focused && focus.matches('summary') ? focus.parentElement : null;
+      const summaryKey = summaryParent?.dataset.uiDisclosure || summaryParent?.dataset.chapter;
+      const headingFocus = focused && focus.matches('.wb-title');
+      rememberDisclosures(page);
+      page.innerHTML = html;
+      restoreDisclosures(page);
       contentSignature = signature;
       body.scrollTop = top;
-      if (focusKey != null) box.querySelector(`[${focusAttr}="${focusKey}"]`)?.focus({ preventScroll: true });
+      let nextFocus = focusAttr ? [...page.querySelectorAll(`[${focusAttr}]`)].find(el => el.getAttribute(focusAttr) === focusKey) : null;
+      if (summaryKey) nextFocus = [...page.querySelectorAll('details')].find(el => (el.dataset.uiDisclosure || el.dataset.chapter) === summaryKey)?.querySelector('summary');
+      if (headingFocus) { nextFocus = page.querySelector('.wb-title'); if (nextFocus) nextFocus.tabIndex = -1; }
+      nextFocus?.focus({ preventScroll: true });
+    }
+    function rememberDisclosures(page) {
+      for (const detail of page.querySelectorAll('details[data-ui-disclosure]')) disclosures.set(detail.dataset.uiDisclosure, detail.open);
+      for (const detail of page.querySelectorAll('details[data-chapter]')) chapters.set(detail.dataset.chapter, detail.open);
+    }
+    function restoreDisclosures(page) {
+      for (const detail of page.querySelectorAll('details[data-ui-disclosure]')) {
+        if (disclosures.has(detail.dataset.uiDisclosure)) detail.open = disclosures.get(detail.dataset.uiDisclosure);
+      }
+      for (const detail of page.querySelectorAll('details[data-chapter]')) {
+        if (chapters.has(detail.dataset.chapter)) detail.open = chapters.get(detail.dataset.chapter);
+      }
     }
     const scrollKey = () => `${view}:${['course', 'resource'].includes(view) ? selectedCourse || '' : ''}:${view === 'resource' ? selectedResource || '' : ''}`;
     function saveView() {
+      rememberDisclosures(box.querySelector(`.wb-view[data-view="${view}"]`));
       scroll.set(scrollKey(), body.scrollTop);
       try {
         if (!storageKey || !preferencesReady) return;
         const snapshot = {
           runId, view: view === 'reset' ? 'settings' : view, selectedCourse, selectedResource,
-          scroll: [...scroll].slice(-300), chapters: [...chapters].slice(-300), shell: getShell?.()
+          scroll: [...scroll].slice(-300), chapters: [...chapters].slice(-300), disclosures: [...disclosures].slice(-300), shell: getShell?.()
         };
         Promise.resolve(globalThis.chrome?.storage?.local?.set({ [storageKey]: snapshot })).catch(() => {});
       } catch { /* Optional view preferences must never block task controls. */ }
@@ -285,6 +309,7 @@
     function navigate(next, selection = {}) {
       if (!box.querySelector(`[data-view="${next}"]`)) return;
       viewRevision++;
+      rememberDisclosures(box.querySelector(`.wb-view[data-view="${view}"]`));
       scroll.set(scrollKey(), body.scrollTop);
       if ('course' in selection) { selectedCourse = selection.course; selectedResource = null; }
       if ('resource' in selection) selectedResource = selection.resource;
@@ -299,6 +324,7 @@
       saveView();
     }
     function render() {
+      rememberDisclosures(box.querySelector(`.wb-view[data-view="${view}"]`));
       model = getModel();
       if (!storageKey && Number.isInteger(model.tabId)) {
         storageKey = `wb-assistant-ui-v1:${model.tabId}`;
@@ -327,13 +353,16 @@
           for (const entry of Array.isArray(restore.chapters) ? restore.chapters.slice(-300) : []) {
             if (Array.isArray(entry) && typeof entry[0] === 'string' && typeof entry[1] === 'boolean') chapters.set(...entry);
           }
+          for (const entry of Array.isArray(restore.disclosures) ? restore.disclosures.slice(-300) : []) {
+            if (Array.isArray(entry) && typeof entry[0] === 'string' && typeof entry[1] === 'boolean') disclosures.set(...entry);
+          }
           restoredTop = scroll.get(scrollKey()) || 0;
           runId = model.job?.runId;
         }
         restore = null;
       }
       if (runId !== model.job?.runId) {
-        if (runId != null) { selectedCourse = null; selectedResource = null; chapters.clear(); scroll.clear(); contentSignature = ''; }
+        if (runId != null) { selectedCourse = null; selectedResource = null; chapters.clear(); disclosures.clear(); scroll.clear(); $('wb-overview-more').open = false; contentSignature = ''; }
         runId = model.job?.runId;
       }
       box.dataset.view = view; box.dataset.tone = model.home.tone;
@@ -370,12 +399,14 @@
       $('wb-metric-courses').setAttribute('aria-label', overview.courseTotal == null ? '课程总数尚未统计完整' : `已确认 ${overview.courseConfirmed} 门，共 ${overview.courseTotal} 门课程`);
       $('wb-metric-media').setAttribute('aria-label', `平台已确认 ${overview.mediaConfirmed} 项音视频，${overview.mediaTotal == null ? '总数尚未统计完整' : `共 ${overview.mediaTotal} 项`}`);
       text('wb-overview-alerts', model.alerts.length);
+      $('wb-overview-alerts').parentElement.dataset.attention = String(model.alerts.length > 0);
       $('wb-overview-current').hidden = !overview.currentCourse;
-      text('wb-overview-phase', model.home.status); text('wb-overview-course', overview.currentCourse);
+      text('wb-overview-phase', '当前课程'); text('wb-overview-course', overview.currentCourse);
       text('wb-overview-resource', overview.currentResource); $('wb-overview-resource').hidden = !overview.currentResource;
       $('wb-reset-menu').disabled = model.resetPending;
       if (view === 'reset' && model.resetPending) { view = 'home'; return render(); }
       refreshPage();
+      restoreDisclosures(box.querySelector(`.wb-view[data-view="${view}"]`));
       if (restoredTop != null) body.scrollTop = restoredTop;
       return model;
     }
@@ -390,7 +421,9 @@
     });
     box.addEventListener('toggle', event => {
       const el = event.target;
+      if (el.closest?.('.wb-view')?.dataset.view !== view) return;
       if (el.isConnected && el.hasAttribute?.('data-chapter')) chapters.set(el.dataset.chapter, el.open);
+      if (el.isConnected && el.hasAttribute?.('data-ui-disclosure')) disclosures.set(el.dataset.uiDisclosure, el.open);
     }, true);
     box.addEventListener('keydown', event => {
       if (event.key !== 'Escape' || view === 'home') return;
