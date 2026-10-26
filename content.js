@@ -1247,6 +1247,8 @@
         title: getDisplayedCourseTitle() || '当前课程', status: 'current', records: {}, live: true });
     }
     for (const course of courses) {
+      course.knownMediaTotal = Number.isInteger(course.total) && course.total >= 0 ? course.total :
+        Array.isArray(course.directory?.items) ? course.directory.items.filter(item => ['video', 'audio', 'media'].includes(item.mediaType)).length : null;
       if (!course.live) continue;
       // Preserve a saved directory while the actual page is still loading.
       course.directoryStale = Boolean(course.directory && !liveItems.length);
@@ -1347,8 +1349,38 @@
       home.showStart = false; home.showStop = false; home.showResults = false; home.resetRetry = !state.resetPending; home.tone = 'warning';
     }
     if (getRoute() === 'other') home.showStart = false;
+    // Counts are presentation only. Unknown totals stay unknown during scanning.
+    const scanning = job && ['go-agent', 'entry-home', 'scan-home'].includes(job.phase);
+    const totals = courses.map(course => {
+      const observed = (course.directory?.items || []).filter(item => ['video', 'audio', 'media'].includes(item.mediaType)).length;
+      return course.knownMediaTotal != null && observed <= course.knownMediaTotal ? course.knownMediaTotal : null;
+    });
+    const confirmedByCourse = courses.map((course, index) => {
+      const knownKeys = new Set((course.directory?.items || []).filter(item =>
+        ['video', 'audio', 'media'].includes(item.mediaType) &&
+        (item.observedCompleted || course.records?.[item.key]?.confirmed)).map(item => item.key));
+      const records = Array.isArray(course.directory?.items) ? knownKeys.size :
+        Object.values(course.records || {}).filter(record => record.confirmed).length;
+      // remaining includes unresolved records, so subtraction is conservative.
+      const inspected = totals[index] != null && Number.isInteger(course.remaining) && course.remaining >= 0
+        ? Math.max(0, totals[index] - course.remaining) : 0;
+      const confirmed = ['complete', 'completed'].includes(course.status) && course.knownMediaTotal != null
+        ? Math.max(course.knownMediaTotal, records) : Math.max(records, inspected);
+      return totals[index] == null ? confirmed : Math.min(totals[index], confirmed);
+    });
+    const overview = {
+      courseConfirmed: courses.filter(course => ['complete', 'completed'].includes(course.status)).length,
+      courseTotal: scanning || (!courses.length && job?.phase !== 'finished') ? null : courses.length,
+      mediaConfirmed: confirmedByCourse.reduce((sum, count) => sum + count, 0),
+      mediaTotal: scanning || totals.some(total => total == null) || (!courses.length && job?.phase !== 'finished')
+        ? null : totals.reduce((sum, count) => sum + count, 0),
+      currentCourse: candidate?.title || (!job && liveCourseKey ? getDisplayedCourseTitle() : ''),
+      currentResource: candidate?.directory?.items?.find(item => item.key === activeResourceKey)?.title || candidate?.currentResource?.title || ''
+    };
+    const hasTaskState = running || state.startPending || state.pausePending || resetPending || state.storageFailed ||
+      ['paused', 'manual', 'interrupted'].includes(job?.phase) || ['paused', 'manual'].includes(state.mode) || alerts.length > 0;
     return { job, tabId: state.tabId, courses, activeCourseKey, activeResourceKey, media, target: getPlaybackTarget(), home,
-      alerts, resetPending, logCount: state.logEntries.length,
+      alerts, resetPending, overview, hasTaskState, logCount: state.logEntries.length,
       targetReached: allRecords.filter(r => r.targetReached).length, confirmed: allRecords.filter(r => r.confirmed).length };
   }
 

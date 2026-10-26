@@ -59,17 +59,25 @@
         </section>
         <section class="wb-view" data-view="details" hidden>
           <button class="wb-link wb-back" type="button" data-ui-view="home">${svg('back')}任务首页</button>
-          <h2 class="wb-title">任务详情</h2><div id="wb-ui-statistics"></div>
-          <div class="kv"><span>课程任务</span><span id="wb-job-summary">尚未开始</span></div>
-          <div class="kv"><span>本轮自然结束</span><span id="wb-count">0</span></div>
-          <div class="kv"><span>当前课页面已确认</span><span id="wb-confirmed">—</span></div>
-          <div class="kv"><span>页面考核点（参考）</span><span id="wb-course-progress">未识别</span></div>
-          <div class="kv"><span>需人工处理</span><span id="wb-manual">0</span></div>
-          <p class="wb-caption">播放目标、自然结束、平台确认分别记录，计数不可相加。</p>
-          <div class="wb-actions">${button('查看运行日志', 'logs')}</div>
+          <h2 class="wb-title">任务概览</h2>
+          <div class="wb-metrics" aria-label="任务统计">
+            <div class="wb-metric" id="wb-metric-courses"><span>课程确认</span><strong id="wb-overview-courses">待扫描</strong><small>门</small></div>
+            <div class="wb-metric" id="wb-metric-media"><span>音视频确认</span><strong id="wb-overview-media">待统计</strong><small>项</small></div>
+            <button class="wb-metric" type="button" data-ui-view="alerts" aria-label="查看待处理事项"><span>待处理</span><strong id="wb-overview-alerts">0</strong><small>项</small></button>
+          </div>
+          <div class="wb-overview-current" id="wb-overview-current" hidden><span class="wb-caption" id="wb-overview-phase"></span><p id="wb-overview-course"></p><p class="wb-caption" id="wb-overview-resource" hidden></p></div>
+          <div class="wb-actions wb-actions-inline">${button('待处理事项', 'alerts')}${button('运行日志', 'logs')}</div>
+          <details class="wb-more" id="wb-overview-more"><summary>更多统计与说明</summary>
+            <div id="wb-ui-statistics"></div>
+            <div class="kv"><span>课程任务</span><span id="wb-job-summary">尚未开始</span></div>
+            <div class="kv"><span>本轮自然结束</span><span id="wb-count">0</span></div>
+            <div class="kv"><span>当前课页面已确认</span><span id="wb-confirmed">—</span></div>
+            <div class="kv"><span>页面考核点（参考）</span><span id="wb-course-progress">未识别</span></div>
+            <p class="wb-caption">播放目标、自然结束与平台确认分别记录，不可相加。总数未统计完整时不显示完成比例。</p>
+          </details>
         </section>
         <section class="wb-view" data-view="logs" hidden>
-          <button class="wb-link wb-back" type="button" data-ui-view="details">${svg('back')}任务详情</button>
+          <button class="wb-link wb-back" type="button" data-ui-view="details">${svg('back')}任务概览</button>
           <h2 class="wb-title">运行日志</h2><button class="log-new" id="wb-log-new" type="button" aria-live="polite" hidden></button>
           <div class="log" id="wb-log" role="log" aria-label="运行日志" aria-live="off"></div><p class="wb-caption" id="wb-ui-log-empty">还没有运行记录</p>
         </section>
@@ -86,9 +94,9 @@
           <div class="wb-actions"><button class="btn danger" id="wb-reset" type="button">确认重置</button>${button('保留记录', 'settings')}</div>
         </section>
         <section class="wb-view" data-view="about" hidden></section>
-        <div class="wb-legacy" aria-hidden="true"><span id="wb-status"></span><span id="wb-current"></span><span id="wb-course"></span><span id="wb-progress"></span><div id="wb-notice"></div><span id="wb-manual-count"></span><span id="wb-video-count"></span><span id="wb-pending-count"></span><div id="wb-video-list"></div><button id="wb-scan" type="button">查看最新目录</button></div>
+        <div class="wb-legacy" aria-hidden="true"><span id="wb-status"></span><span id="wb-current"></span><span id="wb-course"></span><span id="wb-progress"></span><div id="wb-notice"></div><span id="wb-manual"></span><span id="wb-manual-count"></span><span id="wb-video-count"></span><span id="wb-pending-count"></span><div id="wb-video-list"></div><button id="wb-scan" type="button">查看最新目录</button></div>
       </div>
-      <nav class="wb-nav" id="wb-ui-nav" aria-label="助手导航"><button class="wb-link" type="button" data-ui-view="courses">全部课程</button><button class="wb-link" id="wb-ui-alert-link" type="button" data-ui-view="alerts" hidden></button><button class="wb-link" type="button" data-ui-view="details">详情</button></nav>
+      <nav class="wb-nav" id="wb-ui-nav" aria-label="助手导航"><button class="wb-link" type="button" data-ui-view="courses">全部课程</button><button class="wb-link" id="wb-ui-alert-link" type="button" data-ui-view="alerts" hidden></button><button class="wb-link" type="button" data-ui-view="details">概览</button></nav>
       <div class="wb-task-strip" id="wb-ui-task-strip" hidden><span id="wb-ui-task-label"></span><button class="wb-link" type="button" data-ui-view="home">回到任务</button></div>`;
     const $ = id => box.querySelector(`#${id}`);
     if (imageUrl) box.querySelector('.wb-brand-image').src = imageUrl;
@@ -331,7 +339,7 @@
       box.dataset.view = view; box.dataset.tone = model.home.tone;
       syncSponsor();
       for (const page of box.querySelectorAll('[data-view]')) page.hidden = page.dataset.view !== view;
-      $('wb-ui-nav').hidden = view !== 'home'; $('wb-ui-task-strip').hidden = view === 'home';
+      $('wb-ui-nav').hidden = view !== 'home'; $('wb-ui-task-strip').hidden = view === 'home' || !model.hasTaskState;
       text('wb-ui-status', model.home.status); text('wb-ui-title', model.home.title); text('wb-ui-subtitle', model.home.subtitle);
       $('wb-ui-subtitle').hidden = !model.home.subtitle;
       text('wb-ui-caption', model.home.caption); $('wb-ui-caption').hidden = !model.home.caption;
@@ -356,6 +364,15 @@
       $('wb-log').hidden = model.logCount === 0;
       const stats = kv('任务范围', model.job?.scope === 'single' ? '当前课程' : '全部正在上的课程') + kv('本轮达到播放目标', model.targetReached) + kv('任务中已确认记录', model.confirmed);
       if ($('wb-ui-statistics').innerHTML !== stats) $('wb-ui-statistics').innerHTML = stats;
+      const overview = model.overview;
+      text('wb-overview-courses', overview.courseTotal == null ? model.job ? '统计中' : '待扫描' : `${overview.courseConfirmed} / ${overview.courseTotal}`);
+      text('wb-overview-media', overview.mediaTotal == null ? overview.mediaConfirmed ? `${overview.mediaConfirmed} / …` : '统计中' : `${overview.mediaConfirmed} / ${overview.mediaTotal}`);
+      $('wb-metric-courses').setAttribute('aria-label', overview.courseTotal == null ? '课程总数尚未统计完整' : `已确认 ${overview.courseConfirmed} 门，共 ${overview.courseTotal} 门课程`);
+      $('wb-metric-media').setAttribute('aria-label', `平台已确认 ${overview.mediaConfirmed} 项音视频，${overview.mediaTotal == null ? '总数尚未统计完整' : `共 ${overview.mediaTotal} 项`}`);
+      text('wb-overview-alerts', model.alerts.length);
+      $('wb-overview-current').hidden = !overview.currentCourse;
+      text('wb-overview-phase', model.home.status); text('wb-overview-course', overview.currentCourse);
+      text('wb-overview-resource', overview.currentResource); $('wb-overview-resource').hidden = !overview.currentResource;
       $('wb-reset-menu').disabled = model.resetPending;
       if (view === 'reset' && model.resetPending) { view = 'home'; return render(); }
       refreshPage();

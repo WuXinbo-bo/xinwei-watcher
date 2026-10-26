@@ -42,6 +42,16 @@
 #wb-study-ui .wb-track{height:5px;background:var(--wb-soft);border-radius:3px;margin-top:8px;overflow:hidden}
 #wb-study-ui .wb-fill{height:100%;border-radius:3px;background:var(--wb-accent);width:0;transition:width .22s ease}
 #wb-study-ui .wb-actions{display:grid;gap:8px;margin-top:18px}
+#wb-study-ui .wb-actions-inline{grid-template-columns:1fr 1fr}
+#wb-study-ui .wb-metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin-top:16px}
+#wb-study-ui .wb-metric{display:flex;flex-direction:column;align-items:flex-start;gap:4px;min-width:0;padding:10px 8px;background:var(--wb-soft);border:0;border-radius:9px;color:var(--wb-fg);text-align:left}
+#wb-study-ui .wb-metric>span,#wb-study-ui .wb-metric>small{font-size:12px;color:var(--wb-muted)}
+#wb-study-ui .wb-metric>strong{font-size:16px;font-weight:600;font-variant-numeric:tabular-nums;overflow-wrap:anywhere;line-height:1.4}
+#wb-study-ui button.wb-metric:hover{background:var(--wb-accent-soft)}
+#wb-study-ui .wb-overview-current{border-bottom:1px solid var(--wb-border);padding:13px 0}
+#wb-study-ui .wb-overview-current>p:not(.wb-caption){margin:5px 0 0;font-size:13px;font-weight:500;overflow-wrap:anywhere}
+#wb-study-ui .wb-more{margin-top:16px;border-top:1px solid var(--wb-border);padding-top:4px}
+#wb-study-ui .wb-more>summary{padding:10px 0;font-size:12px;color:var(--wb-muted);cursor:pointer}
 #wb-study-ui .btn{width:100%;min-height:38px;border:1px solid var(--wb-border);border-radius:9px;padding:9px 12px;font-weight:500;background:var(--wb-bg);color:var(--wb-fg);transition:background .12s ease,transform .12s ease}
 #wb-study-ui .btn:hover:not(:disabled){background:var(--wb-soft)}
 #wb-study-ui .btn:active:not(:disabled){transform:translateY(1px)}

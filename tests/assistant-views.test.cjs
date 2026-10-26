@@ -145,6 +145,66 @@ test('chapter display metadata is optional and does not change recovery identity
   } finally { close(f); }
 });
 
+test('overview shows three metrics and keeps technical statistics collapsed across updates', () => {
+  const f = fixture([mediaItem('视频一'), mediaItem('音频一', 'audio')]);
+  try {
+    const { ui, job, box } = setup(f); ui.navigate('details');
+    const page = box.querySelector('[data-view=details]'), more = box.querySelector('#wb-overview-more');
+    assert.equal(page.querySelector('h2').textContent, '任务概览');
+    assert.equal(page.querySelectorAll('.wb-metric').length, 3); assert.equal(more.open, false);
+    assert.equal(box.querySelector('#wb-count').closest('details'), more);
+    assert.equal(box.querySelector('#wb-ui-statistics').closest('details'), more);
+    assert.match(box.querySelector('#wb-overview-current').textContent, /当前测试课/);
+    more.open = true; job.candidates[0].records[job.candidates[0].directory.items[0].key] = { targetReached: true };
+    ui.render(); assert.equal(more.open, true);
+    assert.equal(box.querySelector('#wb-overview-media').textContent, '统计中', 'target reached is not platform confirmation');
+    page.querySelector('[data-ui-view=alerts]').click(); assert.equal(ui.view, 'alerts');
+  } finally { close(f); }
+});
+
+test('overview counts distinct confirmed media and never invents an unknown denominator', () => {
+  const f = fixture([mediaItem('视频一'), mediaItem('音频一', 'audio')]);
+  try {
+    const { ui, job, box } = setup(f), items = job.candidates[0].directory.items;
+    job.candidates[0].records[items[0].key] = { confirmed: true, ended: true };
+    job.candidates[0].records[items[1].key] = { targetReached: true, ended: true, confirmed: false };
+    ui.navigate('details'); assert.equal(box.querySelector('#wb-overview-media').textContent, '1 / …');
+    assert.match(box.querySelector('#wb-metric-media').getAttribute('aria-label'), /总数尚未统计完整/);
+    job.candidates[1].directory = { items: [] }; job.candidates[1].status = 'complete';
+    job.candidates[2].records.old = { confirmed: true }; ui.render();
+    assert.equal(box.querySelector('#wb-overview-media').textContent, '2 / 3');
+    assert.equal(box.querySelector('#wb-overview-courses').textContent, '1 / 3');
+    job.phase = 'scan-home'; ui.render();
+    assert.equal(box.querySelector('#wb-overview-courses').textContent, '统计中');
+    assert.equal(box.querySelector('#wb-overview-media').textContent, '2 / …');
+  } finally { close(f); }
+});
+
+test('loading a partial directory preserves the saved total; new resources do not inherit old confirmation', () => {
+  const f = fixture([mediaItem('视频一'), mediaItem('音频一', 'audio')]);
+  try {
+    const { ui, job, box } = setup(f), c = job.candidates[0];
+    job.candidates[1].directory = { items: [] };
+    c.total = 4; c.remaining = 3;
+    ui.navigate('details');
+    assert.equal(box.querySelector('#wb-overview-media').textContent, '1 / 5');
+    c.total = 2; c.remaining = 0; c.status = 'complete';
+    f.window.document.querySelector('.el-sub-menu ul').insertAdjacentHTML('beforeend', mediaItem('新出现的视频'));
+    ui.render();
+    assert.equal(box.querySelector('#wb-overview-media').textContent, '2 / …');
+  } finally { close(f); }
+});
+
+test('idle inner pages omit the task strip, while paused tasks keep their return control', () => {
+  const f = homeFixture([]);
+  try {
+    const ui = f.api.state.uiController;
+    ui.navigate('details'); assert.equal(f.window.document.getElementById('wb-ui-task-strip').hidden, true);
+    f.api.state.job = { runId: 'paused', phase: 'paused', running: false, candidates: [] };
+    f.api.updateTaskControls(); assert.equal(f.window.document.getElementById('wb-ui-task-strip').hidden, false);
+  } finally { close(f); }
+});
+
 function preferenceChrome(values, blocked = false) {
   return {
     runtime: { sendMessage: async () => ({ ok: true, job: null, tabId: 1 }) },
