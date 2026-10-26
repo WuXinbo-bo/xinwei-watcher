@@ -37,8 +37,8 @@
         <button class="wb-icon" type="button" data-ui-view="settings" aria-label="设置" title="设置">${svg('settings')}</button>
         <button class="wb-icon" id="wb-min" type="button" aria-label="收起芯位教育助手" title="收起面板">${svg('collapse')}</button>
       </header>
-      <aside class="wb-sponsor" id="wb-sponsor" aria-label="赞助支持" hidden>
-        <a id="wb-sponsor-link" target="_blank" rel="noopener noreferrer sponsored"><span class="wb-sponsor-mark" aria-hidden="true">${svg('sponsor')}</span><span class="wb-sponsor-copy"><span class="wb-sponsor-label">赞助支持</span><span id="wb-sponsor-message"></span></span><span class="wb-sponsor-arrow" aria-hidden="true">↗</span></a>
+      <aside class="wb-sponsor" id="wb-sponsor" aria-label="项目赞助" hidden>
+        <a id="wb-sponsor-link" target="_blank" rel="noopener noreferrer sponsored"><span class="wb-sponsor-mark" aria-hidden="true">${svg('sponsor')}</span><span class="wb-sponsor-copy"><span class="wb-sponsor-label">项目赞助</span><span id="wb-sponsor-message"></span></span><span class="wb-sponsor-arrow" aria-hidden="true">↗</span></a>
       </aside>
       <div class="bd" id="wb-body">
         <section class="wb-view" data-view="home">
@@ -84,12 +84,28 @@
         </section>
         <section class="wb-view" data-view="settings" hidden>
           <button class="wb-link wb-back" type="button" data-ui-view="home">${svg('back')}任务首页</button><h2 class="wb-title">设置</h2>
-          <label class="kv playback-target" for="wb-playback-target"><span>播放目标</span><span class="target-value"><input id="wb-playback-target" type="number" min="80" max="100" step="1" value="100" aria-label="播放目标百分比"><span>%</span></span></label>
-          <div class="wb-target-presets" role="group" aria-label="快捷播放目标">${[80,90,100].map(value => `<button type="button" data-target-preset="${value}" aria-pressed="false">${value}%</button>`).join('')}</div>
-          <p class="wb-caption">80%–100%，默认 100%。有效整数立即应用到当前正常播放；异常重试保持 100%。达到播放目标后切换，平台完成状态另行核对。</p><p class="wb-caption" id="wb-setting-feedback" role="status" aria-live="polite"></p>
-          <button class="wb-setting-row" type="button" data-ui-view="details">任务概览与日志<span>›</span></button>
-          <button class="wb-setting-row" type="button" data-ui-view="about">关于与服务<span>›</span></button>
-          <button class="wb-setting-row danger" id="wb-reset-menu" type="button" data-ui-view="reset">重置任务记录<span>›</span></button>
+          <section class="wb-setting-card wb-setting-target-card" aria-labelledby="wb-setting-target-title">
+            <div class="wb-setting-card-head"><div><h3 id="wb-setting-target-title">播放目标</h3><p>达到目标后切换学习项，平台完成状态单独核对。</p></div><strong id="wb-setting-target-summary">100%</strong></div>
+            <div class="wb-target-presets" role="group" aria-label="快捷播放目标">${[80,90,100].map(value => `<button type="button" data-target-preset="${value}" aria-pressed="false">${value}%</button>`).join('')}</div>
+            <label class="wb-setting-input" for="wb-playback-target"><span>自定义目标</span><span class="target-value"><input id="wb-playback-target" type="number" min="80" max="100" step="1" value="100" aria-label="播放目标百分比"><span>%</span></span></label>
+            <p class="wb-setting-feedback" id="wb-setting-feedback" role="status" aria-live="polite"></p>
+          </section>
+          <section class="wb-setting-card" aria-labelledby="wb-setting-rules-title">
+            <div class="wb-setting-card-head"><div><h3 id="wb-setting-rules-title">任务规则</h3><p>当前任务按以下规则运行。</p></div></div>
+            <div class="wb-setting-rule"><span>处理范围</span><strong>视频和音频</strong></div>
+            <div class="wb-setting-rule"><span>异常恢复</span><strong>恢复时使用 100%</strong></div>
+            <div class="wb-setting-rule"><span>完成依据</span><strong>平台页面确认</strong></div>
+          </section>
+          <section class="wb-setting-card wb-setting-links" aria-labelledby="wb-setting-tools-title">
+            <div class="wb-setting-card-head"><div><h3 id="wb-setting-tools-title">界面辅助</h3><p>查看任务状态和使用说明。</p></div></div>
+            <button class="wb-setting-row" type="button" data-ui-view="details">任务概览与日志<span>›</span></button>
+            <button class="wb-setting-row" type="button" data-ui-view="help">使用指南<span>›</span></button>
+            <button class="wb-setting-row" type="button" data-ui-view="about">关于与项目赞助<span>›</span></button>
+          </section>
+          <section class="wb-setting-card wb-setting-danger" aria-labelledby="wb-setting-data-title">
+            <div class="wb-setting-card-head"><div><h3 id="wb-setting-data-title">任务数据</h3><p>只清除插件记录，不影响网站学习进度。</p></div></div>
+            <button class="wb-setting-row danger" id="wb-reset-menu" type="button" data-ui-view="reset">重置任务记录<span>›</span></button>
+          </section>
         </section>
         <section class="wb-view" data-view="reset" hidden>
           <button class="wb-link wb-back" id="wb-reset-cancel" type="button" data-ui-view="settings">${svg('back')}取消</button>

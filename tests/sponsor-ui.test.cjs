@@ -39,6 +39,11 @@ test('sponsor copy rotates without task commands, layout replacement or a visibl
     const box = f.window.document.getElementById('wb-study-ui');
     assert.equal(box.getAttribute('aria-label'), '芯位教育助手');
     assert.equal(box.querySelector('#wb-drag [aria-label=设置]').title, '设置');
+    assert.equal(box.querySelector('#wb-sponsor').getAttribute('aria-label'), '项目赞助');
+    assert.equal(box.querySelector('.wb-sponsor-label').textContent, '项目赞助');
+    f.api.state.uiController.navigate('settings');
+    assert.deepEqual([...box.querySelectorAll('.wb-setting-card h3')].map(node => node.textContent), ['播放目标', '任务规则', '界面辅助', '任务数据']);
+    assert.equal(box.querySelector('#wb-setting-target-summary').textContent, '100%');
     const first = f.message(), link = box.querySelector('#wb-sponsor-link');
     let commands = 0; f.window.chrome.runtime.sendMessage = async () => { commands++; };
     f.advance(10140); assert.notEqual(f.message(), first); assert.equal(box.querySelector('#wb-sponsor-link'), link);

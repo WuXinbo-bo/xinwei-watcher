@@ -1178,6 +1178,8 @@
 
   function renderPlaybackTarget() {
     const input = document.getElementById('wb-playback-target');
+    const summary = document.getElementById('wb-setting-target-summary');
+    if (summary) summary.textContent = `${getPlaybackTarget()}%`;
     if (input && document.activeElement !== input) input.value = String(getPlaybackTarget());
     for (const button of document.querySelectorAll('[data-target-preset]')) {
       button.setAttribute('aria-pressed', String(Number(button.dataset.targetPreset) === getPlaybackTarget()));
