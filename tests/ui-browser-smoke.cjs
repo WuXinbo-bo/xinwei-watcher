@@ -24,7 +24,7 @@ async function main() {
       contentType: 'text/html',
       body: '<!doctype html><meta charset="utf-8"><title>本地 UI 测试 · 示例数据</title>' +
         '<style>body{margin:0;background:#f2f5fa;font:14px sans-serif;color:#435065}main{padding:32px}</style>' +
-        '<main><h1>本地 UI 测试 · 示例数据</h1><p>此页面不连接真实学习数据。</p><div class="course-name">临床护理基础</div>' +
+        '<main><h1>本地 UI 测试 · 示例数据</h1><p>此页面不连接真实学习数据。</p><div class="course-name">操作系统原理</div>' +
         '<div class="sub-menu-area"><ul class="el-menu"><li class="el-sub-menu is-opened" aria-expanded="true">' +
         '<div class="el-sub-menu__title">第一章 · 基础理论</div><ul>' +
         ['护理学导论', '沟通与关怀', '生命体征评估'].map((name, i) => '<li class="el-menu-item"><span class="lecture-title">' + name +
@@ -58,7 +58,7 @@ async function main() {
     assert.equal((await panel.boundingBox()).width, 310);
     assert.equal(await page.locator('#wb-log').isVisible(), false);
     assert.equal(await page.locator('#wb-playback-target').isVisible(), false);
-    assert.equal(await panel.getAttribute('aria-label'), '芯位教育课堂助手');
+    assert.equal(await panel.getAttribute('aria-label'), '芯位教育助手');
     assert.equal(await page.locator('#wb-drag [aria-label=设置]').getAttribute('title'), '设置');
     const sponsor = page.locator('#wb-sponsor'), sponsorCopy = page.locator('#wb-sponsor-message');
     assert.equal(await sponsor.isVisible(), true);
@@ -67,19 +67,18 @@ async function main() {
     await snap('01-ready'); checks.push('real extension, corrected brand, gear icon, local image, compact home');
     const initialCopy = await sponsorCopy.textContent();
     await page.mouse.move(10, 10);
-    await page.waitForFunction(text => document.getElementById('wb-sponsor-message').textContent !== text, initialCopy, { timeout: 10000 });
+    await page.waitForFunction(text => document.getElementById('wb-sponsor-message').textContent !== text, initialCopy, { timeout: 15000 });
     assert.equal((await sponsor.boundingBox()).height, sponsorHeight);
-    await page.locator('#wb-sponsor-toggle').click();
-    assert.equal(await page.locator('#wb-sponsor-toggle').getAttribute('aria-pressed'), 'true');
+    assert.equal(await page.locator('#wb-sponsor-toggle').count(), 0);
+    assert.equal(await page.locator('.wb-sponsor-mark').evaluate(el => getComputedStyle(el, '::after').animationName), 'wb-sponsor-shine');
+    await sponsor.hover();
     const pausedCopy = await sponsorCopy.textContent();
-    await page.locator('#wb-start').focus(); await page.mouse.move(10, 10);
-    await page.waitForTimeout(7300); assert.equal(await sponsorCopy.textContent(), pausedCopy);
-    await page.locator('#wb-sponsor-toggle').click();
+    await page.waitForTimeout(10300); assert.equal(await sponsorCopy.textContent(), pausedCopy);
     const popupPromise = context.waitForEvent('page');
     await page.locator('#wb-sponsor-link').click(); const popup = await popupPromise;
     await popup.waitForLoadState(); assert.equal(popup.url(), 'https://88cf.scxai.top/'); await popup.close();
     await page.bringToFront(); await page.mouse.move(10, 10);
-    checks.push('sponsor rotation, fixed height, explicit pause, safe external link');
+    checks.push('sponsor rotation, fixed height, icon shine, hover pause, safe external link');
     // Stop only synthetic-document polling before seeding display states. No task is started.
     await page.waitForTimeout(400);
     await evaluate(`(() => {
@@ -88,7 +87,7 @@ async function main() {
       s.tabId = 1; s.storageFailed = false; s.mode = 'paused';
       const job = { runId: 'visual-fixture', resetEpoch: 0, running: false, phase: 'paused', scope: 'all',
         homeTabId: 1, ownerTabId: 1, workerTabId: 1, targetIndex: 0, targetPurpose: 'play', targetPercent: 90,
-        candidates: [{ key: 'clinical', courseKey: api.currentCourseKey(), title: '临床护理基础', status: 'inspected',
+        candidates: [{ key: 'clinical', courseKey: api.currentCourseKey(), title: '操作系统原理', status: 'inspected',
           total: 3, remaining: 2, directory, currentResource: {key: directory.items[1].key}, records: {
             [directory.items[0].key]: {title: directory.items[0].title, confirmed: true, ended: true},
             [directory.items[1].key]: {title: directory.items[1].title, started: true, targetReached: true}
@@ -150,11 +149,32 @@ async function main() {
       ['finished-alerts', {phase:'finished',running:false}, {}, '本轮处理结束']
     ];
     await navigate('home');
+    assert.match(await page.locator('#wb-home-summary').textContent(), /已完成 0 门.*待完成 3 门/s);
+    assert.equal(await page.locator('#wb-home-summary [role=progressbar]').getAttribute('aria-valuenow'), '0');
+    assert.equal(await page.locator('#wb-home-course-progress [role=progressbar]').getAttribute('aria-valuenow'), '33');
+    await page.locator('#wb-home-summary [data-course-filter=pending]').click();
+    assert.equal(await page.locator('[data-course]').count(), 3);
+    await page.locator('.wb-view[data-view=courses] [data-course-filter=complete]').click();
+    assert.match(await page.locator('.wb-view[data-view=courses]').textContent(), /暂无符合此分类/);
+    await navigate('home'); await page.locator('#wb-ui-directory').click();
+    assert.equal(await page.locator('.wb-view[data-view=course] h2').textContent(), '操作系统原理');
+    await navigate('home');
+    assert.equal(await evaluate('__wbStudyTest.state.job.running'), false);
+    checks.push('home completion counts, honest percentages, read-only filters and current directory');
     for (const [name, patch, statePatch, expected] of scenarios) {
       await evaluate(`(() => {const s=__wbStudyTest.state; Object.assign(s,{mode:'paused',tabId:1,startPending:false,pausePending:false,routeRecoveryPending:false,storageFailed:false,resetPending:false},${JSON.stringify(statePatch)}); Object.assign(s.job,{reason:'',targetPurpose:'play'},${JSON.stringify(patch)}); s.job.candidates[0].status=${JSON.stringify(statePatch.retry ? 'retry' : 'inspected')}; document.getElementById('wb-current').textContent=${JSON.stringify(statePatch.legacy || '')}; document.getElementById('wb-status').textContent=''; __wbStudyTest.updateTaskControls();})()`);
       assert.equal(await page.locator('#wb-ui-status').textContent(), expected);
+      if (name === 'scanning') assert.equal(await page.locator('#wb-home-summary [role=progressbar]').count(), 0);
       await snap(`state-${name}`);
     }
+    const savedJob = await evaluate('JSON.parse(JSON.stringify(__wbStudyTest.state.job))');
+    await evaluate(`(() => {const s=__wbStudyTest.state;s.job.phase='finished';s.job.running=false;s.job.candidates.forEach(c=>{c.status='complete';c.remaining=0;c.unfinished=[];c.failures=[];Object.values(c.records||{}).forEach(r=>{r.confirmed=true;delete r.error;});});__wbStudyTest.updateTaskControls();})()`);
+    assert.equal(await page.locator('#wb-home-summary [role=progressbar]').getAttribute('aria-valuenow'), '100');
+    await snap('state-all-completed');
+    await evaluate(`(() => {__wbStudyTest.state.job.candidates=[];__wbStudyTest.updateTaskControls();})()`);
+    assert.equal(await page.locator('#wb-home-summary [role=progressbar]').count(), 0);
+    await snap('state-empty-results');
+    await evaluate(`(() => {__wbStudyTest.state.job=${JSON.stringify(savedJob)};__wbStudyTest.updateTaskControls();})()`);
     await evaluate(`(() => {const s=__wbStudyTest.state;s.job.running=true;s.job.phase='course';s.job.reason='';s.tabId=1;__wbStudyTest.updateTaskControls();})()`);
     await page.setViewportSize({ width: 320, height: 460 });
     await navigate('courses'); await page.waitForTimeout(180);
@@ -168,7 +188,7 @@ async function main() {
     assert.equal(await page.locator('.wb-view[data-view=courses]').evaluate(el => getComputedStyle(el).animationName), 'none');
     const reducedCopy = await sponsorCopy.textContent();
     await page.waitForTimeout(7300); assert.equal(await sponsorCopy.textContent(), reducedCopy);
-    assert.equal(await page.locator('#wb-sponsor-toggle').isVisible(), false);
+    assert.equal(await page.locator('.wb-sponsor-mark').evaluate(el => getComputedStyle(el, '::after').animationName), 'none');
     await snap('15-dark-reduced-motion'); checks.push('narrow and short viewport, dark mode, reduced motion');
     await navigate('home'); await page.locator('#wb-min').click();
     assert.equal(await evaluate('__wbStudyTest.state.job.running'), true);

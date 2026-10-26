@@ -714,7 +714,7 @@
     const model = state.uiController?.render();
     if (assistantButton && model) {
       assistantButton.dataset.tone = model.home.tone;
-      assistantButton.setAttribute('aria-label', `芯位教育课堂助手：${model.home.status}，点击展开`);
+      assistantButton.setAttribute('aria-label', `芯位教育助手：${model.home.status}，点击展开`);
     }
   }
 
@@ -1242,7 +1242,8 @@
     const source = job?.candidates?.length ? job.candidates :
       job?.phase === 'scan-home' ? state.uiDiscoveredCourses : [];
     const courses = source.map(candidate => ({ ...candidate, live: candidate.courseKey === liveCourseKey }));
-    if (liveCourseKey && !courses.some(c => c.courseKey === liveCourseKey)) {
+    // A live page outside the task must not inflate task counts or scan results.
+    if (!job && liveCourseKey && !courses.some(c => c.courseKey === liveCourseKey)) {
       courses.push({ key: liveCourseKey, courseKey: liveCourseKey,
         title: getDisplayedCourseTitle() || '当前课程', status: 'current', records: {}, live: true });
     }
@@ -1369,6 +1370,7 @@
       return totals[index] == null ? confirmed : Math.min(totals[index], confirmed);
     });
     const overview = {
+      courseProgress: courses.map((course, index) => ({ key: course.courseKey || course.key, total: totals[index], confirmed: confirmedByCourse[index] })),
       courseConfirmed: courses.filter(course => ['complete', 'completed'].includes(course.status)).length,
       courseTotal: scanning || (!courses.length && job?.phase !== 'finished') ? null : courses.length,
       mediaConfirmed: confirmedByCourse.reduce((sum, count) => sum + count, 0),
@@ -1423,9 +1425,9 @@
     const assistantButton = document.createElement('button');
     assistantButton.id = 'wb-assistant-button';
     assistantButton.type = 'button';
-    assistantButton.setAttribute('aria-label', '展开芯位教育课堂助手');
+    assistantButton.setAttribute('aria-label', '展开芯位教育助手');
     assistantButton.setAttribute('aria-expanded', String(state.panelExpanded));
-    assistantButton.title = '展开芯位教育课堂助手';
+    assistantButton.title = '展开芯位教育助手';
     assistantButton.hidden = getRoute() === 'other' || state.panelExpanded;
     const assistantImage = document.createElement('img');
     assistantImage.alt = '';
@@ -1556,8 +1558,8 @@
       const position = readPanelPosition();
       state.panelExpanded = expanded;
       assistantButton.setAttribute('aria-expanded', String(expanded));
-      assistantButton.setAttribute('aria-label', expanded ? '芯位教育课堂助手已展开' : '展开芯位教育课堂助手');
-      assistantButton.title = expanded ? '芯位教育课堂助手已展开' : '展开芯位教育课堂助手';
+      assistantButton.setAttribute('aria-label', expanded ? '芯位教育助手已展开' : '展开芯位教育助手');
+      assistantButton.title = expanded ? '芯位教育助手已展开' : '展开芯位教育助手';
       updateTaskControls();
       if (expanded) applyPanelPosition(position.left, position.top);
       controller.save();
@@ -4428,7 +4430,7 @@
       if (button && model) {
         const home = model.home;
         button.dataset.tone = home.tone;
-        button.setAttribute('aria-label', `芯位教育课堂助手：${home.status}，点击展开`);
+        button.setAttribute('aria-label', `芯位教育助手：${home.status}，点击展开`);
       }
     }
   }, 1000);

@@ -6,8 +6,7 @@
   }[c]));
   const icons = {
     settings: '<path d="M9.17 5.16 L10.35 2.64 L13.65 2.64 L14.83 5.16 L14.83 5.16 L17.45 4.22 L19.78 6.55 L18.84 9.17 L18.84 9.17 L21.36 10.35 L21.36 13.65 L18.84 14.83 L18.84 14.83 L19.78 17.45 L17.45 19.78 L14.83 18.84 L14.83 18.84 L13.65 21.36 L10.35 21.36 L9.17 18.84 L9.17 18.84 L6.55 19.78 L4.22 17.45 L5.16 14.83 L5.16 14.83 L2.64 13.65 L2.64 10.35 L5.16 9.17 L5.16 9.17 L4.22 6.55 L6.55 4.22 L9.17 5.16Z"/><circle cx="12" cy="12" r="3.2"/>',
-    pause: '<path d="M9 5v14M15 5v14"/>',
-    play: '<path d="m8 5 11 7-11 7Z"/>',
+    sponsor: '<path d="m12 3 2.4 6.6L21 12l-6.6 2.4L12 21l-2.4-6.6L3 12l6.6-2.4Z"/>',
     back: '<path d="m14 6-6 6 6 6"/>',
     video: '<rect x="3" y="5" width="18" height="14" rx="3"/><path d="m10 9 5 3-5 3Z"/>',
     audio: '<path d="M9 18V5l11-2v13M9 9l11-2"/><ellipse cx="6" cy="18" rx="3" ry="3"/><ellipse cx="17" cy="16" rx="3" ry="3"/>',
@@ -26,20 +25,19 @@
   function create({ getModel, imageUrl, promotion = {}, onReset, onLocate, onView, getShell, onRestoreShell }) {
     const box = document.createElement('section');
     box.id = 'wb-study-ui';
-    box.setAttribute('aria-label', '芯位教育课堂助手');
+    box.setAttribute('aria-label', '芯位教育助手');
     box.innerHTML = `
       <header class="hd" id="wb-drag">
-        <div class="wb-brand"><img class="wb-brand-image" alt="" draggable="false"><span>芯位教育课堂助手</span></div>
+        <div class="wb-brand"><img class="wb-brand-image" alt="" draggable="false"><span>芯位教育助手</span></div>
         <button class="wb-icon" type="button" data-ui-view="settings" aria-label="设置" title="设置">${svg('settings')}</button>
-        <button class="wb-icon" id="wb-min" type="button" aria-label="收起芯位教育课堂助手">−</button>
+        <button class="wb-icon" id="wb-min" type="button" aria-label="收起芯位教育助手">−</button>
       </header>
       <aside class="wb-sponsor" id="wb-sponsor" aria-label="赞助支持" hidden>
-        <span class="wb-sponsor-label">赞助支持</span>
-        <a id="wb-sponsor-link" target="_blank" rel="noopener noreferrer sponsored"><span id="wb-sponsor-message"></span><span aria-hidden="true">↗</span></a>
-        <button class="wb-icon" id="wb-sponsor-toggle" type="button" aria-label="暂停赞助轮播" title="暂停赞助轮播" aria-pressed="false">${svg('pause')}</button>
+        <a id="wb-sponsor-link" target="_blank" rel="noopener noreferrer sponsored"><span class="wb-sponsor-mark" aria-hidden="true">${svg('sponsor')}</span><span class="wb-sponsor-copy"><span class="wb-sponsor-label">赞助支持</span><span id="wb-sponsor-message"></span></span><span class="wb-sponsor-arrow" aria-hidden="true">↗</span></a>
       </aside>
       <div class="bd" id="wb-body">
         <section class="wb-view" data-view="home">
+          <div class="wb-summary-card" id="wb-home-summary" hidden></div>
           <div class="wb-status-line" id="wb-ui-status" role="status" aria-live="polite"></div>
           <h2 class="wb-title" id="wb-ui-title"></h2><p class="wb-subtitle" id="wb-ui-subtitle"></p>
           <div class="wb-progress" id="wb-ui-progress" hidden>
@@ -47,8 +45,9 @@
             <div class="wb-track" id="wb-ui-progressbar" role="progressbar" aria-label="当前进度" aria-valuemin="0" aria-valuemax="100"><div class="wb-fill" id="wb-ui-fill"></div></div>
           </div>
           <p class="wb-caption" id="wb-ui-caption"></p>
+          <div class="wb-course-progress" id="wb-home-course-progress" hidden></div>
           <p class="wb-notice" id="wb-ui-notice" hidden></p>
-          <div class="wb-actions"><button class="btn primary start" id="wb-start" type="button">开始</button><button class="btn primary stop" id="wb-stop" type="button" hidden>暂停</button><button class="btn" id="wb-ui-results" type="button" data-ui-view="alerts" hidden>查看待处理事项</button><button class="btn" id="wb-ui-reset-retry" type="button" data-ui-view="reset" hidden>重试重置</button></div>
+          <div class="wb-actions"><button class="btn primary start" id="wb-start" type="button">开始</button><button class="btn primary stop" id="wb-stop" type="button" hidden>暂停</button><button class="btn" id="wb-ui-directory" type="button" hidden>查看本课目录</button><button class="btn" id="wb-ui-results" type="button" data-ui-view="alerts" hidden>查看待处理事项</button><button class="btn" id="wb-ui-reset-retry" type="button" data-ui-view="reset" hidden>重试重置</button></div>
         </section>
         <section class="wb-view" data-view="courses" hidden></section>
         <section class="wb-view" data-view="course" hidden></section>
@@ -101,14 +100,14 @@
     const $ = id => box.querySelector(`#${id}`);
     if (imageUrl) box.querySelector('.wb-brand-image').src = imageUrl;
     const body = $('wb-body');
-    let view = 'home', selectedCourse = null, selectedResource = null, model = null;
+    let view = 'home', selectedCourse = null, selectedResource = null, courseFilter = 'all', model = null;
     let contentSignature = '', scheduled = false, runId = null;
     const scroll = new Map(), chapters = new Map(), disclosures = new Map();
     let restore = null, storageKey = null, preferencesReady = false, viewRevision = 0;
-    const sponsor = $('wb-sponsor'), sponsorLink = $('wb-sponsor-link'), sponsorToggle = $('wb-sponsor-toggle');
+    const sponsor = $('wb-sponsor'), sponsorLink = $('wb-sponsor-link');
     const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)');
     let sponsorItems = [], sponsorSignature = '', sponsorIndex = 0;
-    let sponsorTimer = null, sponsorFadeTimer = null, sponsorPaused = false, sponsorHover = false, sponsorFocus = false;
+    let sponsorTimer = null, sponsorFadeTimer = null, sponsorHover = false, sponsorFocus = false;
     function sponsorData() {
       if (!promotion.enabled || !String(promotion.brand || '').trim()) return null;
       try {
@@ -122,6 +121,7 @@
       window.clearTimeout(sponsorTimer); window.clearTimeout(sponsorFadeTimer);
       sponsorTimer = sponsorFadeTimer = null;
       sponsor.classList.remove('wb-sponsor-fading');
+      sponsor.dataset.motion = 'static';
     }
     function showSponsor(data) {
       const label = `${data.brand} · ${sponsorItems[sponsorIndex]}`;
@@ -138,10 +138,11 @@
       if (signature !== sponsorSignature) {
         stopSponsor(); sponsorSignature = signature; sponsorItems = data.items; sponsorIndex = 0; showSponsor(data);
       }
-      sponsorToggle.hidden = sponsorItems.length < 2 || Boolean(reducedMotion?.matches);
-      const canRotate = sponsorItems.length > 1 && !reducedMotion?.matches && !sponsorPaused &&
+      const canAnimate = !reducedMotion?.matches &&
         !sponsorHover && !sponsorFocus && !document.hidden && !box.hidden && box.isConnected && view !== 'reset';
-      if (!canRotate) { stopSponsor(); return; }
+      if (!canAnimate) { stopSponsor(); return; }
+      sponsor.dataset.motion = 'active';
+      if (sponsorItems.length < 2) { stopSponsor(); sponsor.dataset.motion = 'active'; return; }
       if (sponsorTimer != null || sponsorFadeTimer != null) return;
       sponsorTimer = window.setTimeout(() => {
         sponsorTimer = null; sponsor.classList.add('wb-sponsor-fading');
@@ -150,19 +151,12 @@
           sponsorIndex = (sponsorIndex + 1) % sponsorItems.length;
           showSponsor(data); sponsor.classList.remove('wb-sponsor-fading'); syncSponsor();
         }, 140);
-      }, 7000);
+      }, 10000);
     }
     sponsor.addEventListener('pointerenter', () => { sponsorHover = true; syncSponsor(); });
     sponsor.addEventListener('pointerleave', () => { sponsorHover = false; syncSponsor(); });
     sponsor.addEventListener('focusin', () => { sponsorFocus = true; syncSponsor(); });
     sponsor.addEventListener('focusout', event => { sponsorFocus = sponsor.contains(event.relatedTarget); syncSponsor(); });
-    sponsorToggle.addEventListener('click', () => {
-      sponsorPaused = !sponsorPaused;
-      sponsorToggle.setAttribute('aria-pressed', String(sponsorPaused));
-      const label = sponsorPaused ? '继续赞助轮播' : '暂停赞助轮播';
-      sponsorToggle.setAttribute('aria-label', label); sponsorToggle.title = label;
-      sponsorToggle.innerHTML = svg(sponsorPaused ? 'play' : 'pause'); syncSponsor();
-    });
     document.addEventListener('visibilitychange', syncSponsor);
     reducedMotion?.addEventListener?.('change', syncSponsor);
     window.addEventListener('pagehide', stopSponsor);
@@ -171,6 +165,31 @@
     const title = (label, parent = 'home', parentLabel = '任务首页') => `<button class="wb-link wb-back" type="button" data-ui-view="${parent}">${svg('back')}${parentLabel}</button><h2 class="wb-title">${esc(label)}</h2>`;
     const courseKey = course => course.courseKey || course.key;
     const findCourse = () => model.courses.find(c => courseKey(c) === selectedCourse);
+    const isCourseComplete = course => ['complete', 'completed'].includes(course.status);
+    const progressData = course => model.overview.courseProgress.find(item => item.key === courseKey(course));
+    const remaining = data => data.total == null ? null : Math.max(0, data.total - data.confirmed);
+    function progressBar(label, confirmed, total) {
+      if (total == null || total === 0) return '';
+      const percent = Math.max(0, Math.min(100, Math.floor(confirmed / total * 100)));
+      return `<div class="wb-completion-line"><div class="wb-track" role="progressbar" aria-label="${esc(label)}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${percent}" aria-valuetext="${confirmed} / ${total}，${percent}%"><div class="wb-fill" style="width:${percent}%" data-complete="${confirmed === total}"></div></div><span class="wb-percent">${percent}%</span></div>`;
+    }
+    function taskSummary() {
+      const o = model.overview, pending = o.courseTotal == null ? null : Math.max(0, o.courseTotal - o.courseConfirmed);
+      const scanning = ['go-agent', 'entry-home', 'scan-home'].includes(model.job?.phase);
+      return `<div class="wb-summary-heading"><button type="button" class="wb-link" data-course-filter="all">课程总览 <span aria-hidden="true">›</span></button><span class="wb-summary-total">${o.courseTotal == null ? scanning ? '扫描中' : '待扫描' : `共 ${o.courseTotal} 门`}</span></div>` +
+        (o.courseTotal == null ? `<p class="wb-summary-discovered">已发现 ${model.courses.length} 门课程</p>` :
+          `<div class="wb-summary-counts"><button type="button" data-course-filter="complete">已完成 <strong>${o.courseConfirmed}</strong> 门</button><button type="button" data-course-filter="pending">待完成 <strong>${pending}</strong> 门</button></div>`) +
+        progressBar('课程完成比例（平台确认）', o.courseConfirmed, o.courseTotal) +
+        (model.courses.some(c => c.status === 'manual') ? `<button class="wb-summary-attention" type="button" data-course-filter="attention">其中待处理 ${model.courses.filter(c => c.status === 'manual').length} 门 <span aria-hidden="true">›</span></button>` : '');
+    }
+    function learningProgress(course, interactive = false) {
+      const data = progressData(course);
+      if (!data) return '';
+      const count = data.total == null ? `${data.confirmed ? `已完成 ${data.confirmed} 项 · ` : ''}总数统计中` :
+        data.total === 0 ? '本课没有音视频学习项' : `已完成 ${data.confirmed} 项 · 待完成 ${remaining(data)} 项`;
+      return `<div class="wb-learning-heading">${interactive ? '<button type="button" class="wb-link" data-current-directory>本课学习项 <span aria-hidden="true">›</span></button>' : '<span>本课学习项</span>'}<span class="wb-learning-count">${data.total == null ? '统计中' : `${data.confirmed} / ${data.total}`}</span></div>` +
+        progressBar('本课学习项完成比例（平台确认）', data.confirmed, data.total) + `<p class="wb-progress-meta">${count}</p>`;
+    }
     function resourceStatus(item, course) {
       const record = course.records?.[item.key];
       if (record?.confirmed || item.observedCompleted === true) return '平台已确认';
@@ -193,16 +212,20 @@
     }
     function coursesPage() {
       const inspected = model.courses.filter(c => Array.isArray(c.directory?.items) || Number.isInteger(c.total)).length;
+      const filters = { all: '全部', complete: '已完成', pending: '待完成', attention: '待处理' };
+      const visible = model.courses.map((c, index) => ({c, index})).filter(({c}) =>
+        courseFilter === 'all' || (courseFilter === 'complete' ? isCourseComplete(c) : courseFilter === 'pending' ? !isCourseComplete(c) : c.status === 'manual'));
       return title('全部课程') + `<p class="wb-caption">${model.courses.length ? `${model.courses.length} 门课程 · 已统计 ${inspected} 门` : '尚未建立课程列表'}</p>` +
+        (model.courses.length ? `<div class="wb-filters" role="group" aria-label="筛选课程">${Object.entries(filters).map(([key, label]) => `<button type="button" data-course-filter="${key}" aria-pressed="${courseFilter === key}">${label}</button>`).join('')}</div>` : '') +
         (model.courses.length ? '<p class="wb-caption">仅查看目录，不会切换播放。</p>' : '') +
-        (model.courses.length ? model.courses.map((c, index) => `<button class="wb-course-row" type="button" data-course="${index}"><span class="wb-row-main"><span class="wb-row-title">${esc(c.title)}</span><span class="wb-row-meta">${esc(courseCount(c))}</span></span><span class="wb-row-status" data-active="${model.activeCourseKey === courseKey(c)}">${esc(courseLabel(c))} ›</span></button>`).join('') :
+        (model.courses.length ? visible.map(({c, index}) => `<button class="wb-course-row" type="button" data-course="${index}"><span class="wb-row-main"><span class="wb-row-title">${esc(c.title)}</span><span class="wb-row-meta">${esc(courseCount(c))}</span></span><span class="wb-row-status" data-active="${model.activeCourseKey === courseKey(c)}">${esc(courseLabel(c))} ›</span></button>`).join('') || note('暂无符合此分类的课程。') :
           note(model.job?.phase === 'finished' ? '没有发现可处理的课程。请在网站核对课程状态。' : '开始任务后将扫描正在上的课程。扫描期间，已发现的课程会逐步出现在这里。'));
     }
     function coursePage() {
       const c = findCourse();
       if (!c) return title('课程已更新', 'courses', '全部课程') + note('这门课已不在当前任务中。请返回课程列表查看。');
       const items = c.directory?.items;
-      let html = title(c.title, 'courses', '全部课程') + `<p class="wb-caption">${esc(courseCount(c))}</p>`;
+      let html = title(c.title, 'courses', '全部课程') + `<p class="wb-caption">${esc(courseCount(c))}</p><div class="wb-course-progress">${learningProgress(c)}</div>`;
       if (!items) {
         if (model.job?.running && model.activeCourseKey === courseKey(c)) return html + note('正在读取课程目录，请稍候。已识别的条目会在目录就绪后显示。');
         if (c.failures?.length || c.status === 'manual') return html + note(`目录尚未读取完成，请检查网站页面。${(c.failures || []).join('；')}`);
@@ -265,7 +288,7 @@
       const top = body.scrollTop;
       const focus = box.ownerDocument.activeElement;
       const focused = page.contains(focus);
-      const focusAttr = focused && ['data-resource', 'data-course', 'data-ui-view', 'data-ui-locate'].find(attr => focus.hasAttribute(attr));
+      const focusAttr = focused && ['data-resource', 'data-course', 'data-course-filter', 'data-ui-view', 'data-ui-locate'].find(attr => focus.hasAttribute(attr));
       const focusKey = focusAttr ? focus.getAttribute(focusAttr) : null;
       const summaryParent = focused && focus.matches('summary') ? focus.parentElement : null;
       const summaryKey = summaryParent?.dataset.uiDisclosure || summaryParent?.dataset.chapter;
@@ -292,14 +315,14 @@
         if (chapters.has(detail.dataset.chapter)) detail.open = chapters.get(detail.dataset.chapter);
       }
     }
-    const scrollKey = () => `${view}:${['course', 'resource'].includes(view) ? selectedCourse || '' : ''}:${view === 'resource' ? selectedResource || '' : ''}`;
+    const scrollKey = () => `${view}:${view === 'courses' ? courseFilter : ['course', 'resource'].includes(view) ? selectedCourse || '' : ''}:${view === 'resource' ? selectedResource || '' : ''}`;
     function saveView() {
       rememberDisclosures(box.querySelector(`.wb-view[data-view="${view}"]`));
       scroll.set(scrollKey(), body.scrollTop);
       try {
         if (!storageKey || !preferencesReady) return;
         const snapshot = {
-          runId, view: view === 'reset' ? 'settings' : view, selectedCourse, selectedResource,
+          runId, view: view === 'reset' ? 'settings' : view, selectedCourse, selectedResource, courseFilter,
           scroll: [...scroll].slice(-300), chapters: [...chapters].slice(-300), disclosures: [...disclosures].slice(-300), shell: getShell?.()
         };
         Promise.resolve(globalThis.chrome?.storage?.local?.set({ [storageKey]: snapshot })).catch(() => {});
@@ -313,6 +336,7 @@
       scroll.set(scrollKey(), body.scrollTop);
       if ('course' in selection) { selectedCourse = selection.course; selectedResource = null; }
       if ('resource' in selection) selectedResource = selection.resource;
+      if ('filter' in selection) courseFilter = selection.filter;
       view = next; contentSignature = '';
       render();
       body.scrollTop = scroll.get(scrollKey()) || 0;
@@ -347,6 +371,7 @@
           view = restore.view === 'reset' ? 'settings' : restore.view;
           selectedCourse = typeof restore.selectedCourse === 'string' ? restore.selectedCourse : null;
           selectedResource = typeof restore.selectedResource === 'string' ? restore.selectedResource : null;
+          courseFilter = ['all', 'complete', 'pending', 'attention'].includes(restore.courseFilter) ? restore.courseFilter : 'all';
           for (const entry of Array.isArray(restore.scroll) ? restore.scroll.slice(-300) : []) {
             if (Array.isArray(entry) && typeof entry[0] === 'string' && Number.isFinite(entry[1])) scroll.set(entry[0], Math.max(0, entry[1]));
           }
@@ -362,7 +387,7 @@
         restore = null;
       }
       if (runId !== model.job?.runId) {
-        if (runId != null) { selectedCourse = null; selectedResource = null; chapters.clear(); disclosures.clear(); scroll.clear(); $('wb-overview-more').open = false; contentSignature = ''; }
+        if (runId != null) { selectedCourse = null; selectedResource = null; courseFilter = 'all'; chapters.clear(); disclosures.clear(); scroll.clear(); $('wb-overview-more').open = false; contentSignature = ''; }
         runId = model.job?.runId;
       }
       box.dataset.view = view; box.dataset.tone = model.home.tone;
@@ -372,6 +397,23 @@
       text('wb-ui-status', model.home.status); text('wb-ui-title', model.home.title); text('wb-ui-subtitle', model.home.subtitle);
       $('wb-ui-subtitle').hidden = !model.home.subtitle;
       text('wb-ui-caption', model.home.caption); $('wb-ui-caption').hidden = !model.home.caption;
+      const summary = $('wb-home-summary');
+      summary.hidden = !model.job;
+      const summaryHtml = model.job ? taskSummary() : '';
+      if (summary.innerHTML !== summaryHtml) {
+        const focused = summary.contains(document.activeElement) ? document.activeElement.dataset.courseFilter : null;
+        summary.innerHTML = summaryHtml;
+        if (focused) summary.querySelector(`[data-course-filter="${focused}"]`)?.focus({preventScroll: true});
+      }
+      const current = model.courses.find(c => courseKey(c) === model.activeCourseKey);
+      const courseProgress = $('wb-home-course-progress'), courseHtml = current ? learningProgress(current, true) : '';
+      courseProgress.hidden = !current || !model.job;
+      if (courseProgress.innerHTML !== courseHtml) {
+        const focused = courseProgress.contains(document.activeElement);
+        courseProgress.innerHTML = courseHtml;
+        if (focused) courseProgress.querySelector('button')?.focus({preventScroll: true});
+      }
+      $('wb-ui-directory').hidden = !current || !model.job;
       text('wb-ui-notice', model.home.notice); $('wb-ui-notice').hidden = !model.home.notice;
       const p = model.home.progress;
       $('wb-ui-progress').hidden = !p;
@@ -413,7 +455,12 @@
     box.addEventListener('click', event => {
       const control = event.target.closest('button');
       if (!control || control.disabled) return;
-      if (control.dataset.uiView) navigate(control.dataset.uiView);
+      if (control.hasAttribute('data-course-filter')) navigate('courses', { filter: control.dataset.courseFilter });
+      else if (control.id === 'wb-ui-directory' || control.hasAttribute('data-current-directory')) {
+        const c = model.courses.find(c => courseKey(c) === model.activeCourseKey);
+        if (c) navigate('course', { course: courseKey(c) });
+      }
+      else if (control.dataset.uiView) navigate(control.dataset.uiView, control.dataset.uiView === 'courses' && view !== 'course' ? {filter: 'all'} : {});
       else if (control.hasAttribute('data-course')) { const c = model.courses[Number(control.dataset.course)]; if (c) navigate('course', { course: courseKey(c) }); }
       else if (control.hasAttribute('data-resource')) { const c = findCourse(); const item = c?.directory?.items[Number(control.dataset.resource)]; if (item) navigate('resource', { resource: item.key }); }
       else if (control.hasAttribute('data-ui-locate')) onLocate?.(selectedCourse, control.dataset.uiLocate);
