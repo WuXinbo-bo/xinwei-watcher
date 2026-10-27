@@ -28,7 +28,7 @@ npm test
 
 ## 可选浏览器 UI 验收
 
-1.3.0 首页卡片与单课流程见 [ON_DEMAND.md](../docs/ON_DEMAND.md)。on-demand.test.cjs 验证所选课程授权、扫描后播放、暂停转交竞态和刷新边界；public-recovery-integration.test.cjs 通过首页卡片一键开始，验证完整扫描后学习以及课末停下；home.test.cjs 中的旧调度器全流程仅保留为旧协议回归。
+1.3.1 首页卡片与单课流程见 [ON_DEMAND.md](../docs/ON_DEMAND.md)。on-demand.test.cjs 验证所选课程授权、扫描后播放、暂停转交竞态和刷新边界；public-recovery-integration.test.cjs 通过首页卡片一键开始，验证完整扫描后学习以及课末停下；home.test.cjs 中的旧调度器全流程仅保留为旧协议回归。
 
 `ui-browser-smoke.cjs` 不包含在 `npm test` 中。它使用测试环境提供的 Playwright，在独立临时配置中实际加载扩展，以本地 fixture 拦截页面与外链，不访问课程数据或启动课程任务。项目运行依赖与锁文件不因此增加 Playwright。
 
@@ -40,3 +40,5 @@ BROWSER_EXECUTABLE="/path/to/Edge" UI_ARTIFACTS_DIR="/tmp/xinwei-ui-results" \
 ```
 
 验收项包括扩展本地图片、默认收起、品牌齿轮、无开关的赞助轮播与图标扫光、悬停暂停、首页课程卡片/本课学习项、长标题与按钮几何尺寸、运行锁定与暂停继续、全部内页、19 类任务状态及全部完成/空结果、设置保存、重置取消、拖动与键盘展开、窄/矮视口、深色模式和减少动态效果。测试只在本地合成文档内设置显示状态，不点击开始或确认重置。截图为本地 fixture 上的真实浏览器渲染，不代表真实课程验收。
+
+1.3.1 新增：跨标签页统计一致性、运行状态标记与标题去重、非当前课程抽屉默认收起、学习项只读筛选；focus-task 验证任务代数、站点与标签校验，以及只激活标签和窗口、不导航或修改任务。浏览器验收额外检查扫描信息默认折叠、筛选不写任务和运行状态排版。

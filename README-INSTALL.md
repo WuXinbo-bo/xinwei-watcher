@@ -1,6 +1,6 @@
 # 安装与使用
 
-本目录对应 `Xinwei Course Watcher` **1.3.0 候选贡献版本**。它基于 `WuXinbo-bo/xinwei-watcher` 的 1.0.0 基线整理，保留原作者署名和 Apache License 2.0；不是原作者官方发行版。
+本目录对应 `Xinwei Course Watcher` **1.3.1 候选贡献版本**。它基于 `WuXinbo-bo/xinwei-watcher` 的 1.0.0 基线整理，保留原作者署名和 Apache License 2.0；不是原作者官方发行版。
 
 ## 第一次安装
 
