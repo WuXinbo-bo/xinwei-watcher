@@ -219,3 +219,19 @@ test('failed persistence cannot navigate to a selected course', async () => {
   const r = await f.c.request(f.home, 'home', 'course-select', { ...auth(f.job), index: 0, candidateKey: 'a::class-a', purpose: 'play' });
   assert.equal(r.ok, false); assert.equal(f.c.navigation.length, count);
 });
+
+test('focus task only activates the current owner without starting, navigating or rewriting progress',async()=>{
+  const f=await learning(), before=JSON.parse(JSON.stringify(f.job));
+  f.c.tabs.get(f.worker).windowId=7;
+  let job=await ok(f.c,f.home,'home','focus-task',auth(f.job));
+  assert.deepEqual(job,before);
+  assert.deepEqual(f.c.navigation.at(-1),{id:f.worker,active:true});
+  assert.deepEqual(f.c.windowFocus,[{id:7,focused:true}]);
+  f.c.tabs.get(f.worker).url='https://example.com/';
+  const count=f.c.navigation.length;
+  assert.equal((await f.c.request(f.home,'home','focus-task',auth(job))).ok,false);
+  assert.equal(f.c.navigation.length,count);
+  assert.equal((await f.c.request(f.home,'home','focus-task',{...auth(job),generation:job.generation-1})).ok,false);
+  await f.c.closeTab(f.worker);
+  assert.equal((await f.c.request(f.home,'home','focus-task',auth(job))).ok,false);
+});

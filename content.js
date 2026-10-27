@@ -1258,7 +1258,9 @@
     const liveItems = liveCourseKey ? getMenuItems() : [];
     const liveByKey = new Map(liveItems.map(item => [getItemKey(item), item]));
     const source = job?.phase === 'scan-home' && job.workflow === 'manual' ? state.uiDiscoveredCourses : job?.candidates?.length ? job.candidates : job?.phase === 'scan-home' ? state.uiDiscoveredCourses : [];
-    const courses = source.map(candidate => ({ ...candidate, live: candidate.courseKey === liveCourseKey }));
+    const courses = source.map(candidate => ({ ...candidate, live: candidate.courseKey === liveCourseKey,
+      statisticsItems: job?.workflow === 'manual' ? candidate.directory?.items : null,
+      statisticsRecords: job?.workflow === 'manual' ? candidate.records || {} : null }));
     // A live page outside the task must not inflate task counts or scan results.
     if (!job && liveCourseKey && !courses.some(c => c.courseKey === liveCourseKey)) {
       courses.push({ key: liveCourseKey, courseKey: liveCourseKey,
@@ -1309,8 +1311,7 @@
         if (job.openDeadline) home.caption = `等待剩余 ${Math.max(0, Math.ceil((job.openDeadline - Date.now()) / 1000))} 秒`;
       } else if (phase === 'course' && job?.targetPurpose === 'inspect') {
         home.status = '正在统计音视频'; home.subtitle = job.learnAfterScan ? '目录核对完成后，自动开始本课学习' : '仅扫描所选课程，完成后等待你的操作';
-        const completed = courses.filter(c => Number.isInteger(c.total)).length;
-        if (courses.length) home.progress = { label: '已完成统计', text: `${completed} / ${courses.length} 门`, percent: completed / courses.length * 100 };
+        home.progress = null;
       } else if (phase === 'course') {
         home.status = '正在学习';
         const resource = candidate?.directory?.items?.find(i => i.key === activeResourceKey);
@@ -1354,7 +1355,7 @@
       home.title = candidate?.title || (job.phase === 'paused' ? '任务已暂停' : '自动操作已停止');
       home.subtitle = job.reason || '已有任务记录会在继续时核对'; home.caption = '';
       home.tone = job.phase === 'paused' ? 'neutral' : 'warning';
-      if (job.reason) home.notice = job.reason;
+      home.notice = '';
       if (job.workflow === 'manual' && job.operation === 'inspect') home.subtitle = '扫描未完成；上次完整结果已保留，可继续或重新扫描本课';
     }
     if (!running && !resetPending && ['manual', 'paused'].includes(state.mode) && !['finished', 'manual', 'paused', 'interrupted'].includes(job?.phase)) {
@@ -1385,11 +1386,13 @@
       return course.knownMediaTotal != null && observed <= course.knownMediaTotal ? course.knownMediaTotal : null;
     });
     const confirmedByCourse = courses.map((course, index) => {
-      const knownKeys = new Set((course.directory?.items || []).filter(item =>
+      const statisticsItems = course.statisticsItems || course.directory?.items || [];
+      const statisticsRecords = course.statisticsRecords || course.records || {};
+      const knownKeys = new Set(statisticsItems.filter(item =>
         ['video', 'audio', 'media'].includes(item.mediaType) &&
-        (item.observedCompleted || course.records?.[item.key]?.confirmed)).map(item => item.key));
-      const records = Array.isArray(course.directory?.items) ? knownKeys.size :
-        Object.values(course.records || {}).filter(record => record.confirmed).length;
+        (item.observedCompleted || statisticsRecords[item.key]?.confirmed)).map(item => item.key));
+      const records = Array.isArray(course.statisticsItems || course.directory?.items) ? knownKeys.size :
+        Object.values(statisticsRecords).filter(record => record.confirmed).length;
       // remaining includes unresolved records, so subtraction is conservative.
       const inspected = totals[index] != null && Number.isInteger(course.remaining) && course.remaining >= 0
         ? Math.max(0, totals[index] - course.remaining) : 0;
@@ -1439,6 +1442,7 @@
         repositionWithinVisibleViewport();
       },
       onReset: () => resetPlugin({ confirmed: true }),
+      onFocusTask: () => jobCommand('focus-task').catch(error => log(error.message, 'err')),
       onCourseAction: (course, purpose) => {
         if (purpose === 'list') return start({ refreshList: true });
         if (purpose === 'continue') return start();

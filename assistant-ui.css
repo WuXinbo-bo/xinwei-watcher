@@ -190,10 +190,18 @@
 #wb-study-ui .wb-home-course .wb-course-start{flex:none;width:auto;min-height:36px;font-size:12px;padding:7px 10px;white-space:nowrap}
 #wb-study-ui .wb-home-courses:focus-visible,#wb-study-ui .wb-home-course-info:focus-visible{outline:2px solid var(--wb-accent);outline-offset:2px}
 #wb-study-ui .wb-course-drawer{margin:9px -10px -10px;background:var(--wb-soft);border-top:1px solid var(--wb-border)}
-#wb-study-ui .wb-drawer-toggle{display:flex;align-items:center;gap:8px;width:100%;padding:9px 10px;border:0;background:transparent;color:var(--wb-fg);font:inherit;font-size:11px;text-align:left;cursor:pointer}
+#wb-study-ui .wb-drawer-toggle{display:flex;align-items:center;gap:8px;width:100%;padding:9px 10px;border:0;background:transparent;color:var(--wb-fg);font:inherit;font-size:12px;text-align:left;cursor:pointer}
 #wb-study-ui .wb-drawer-toggle>span:first-child{flex:1;font-weight:600}
 #wb-study-ui .wb-drawer-toggle>span:nth-child(2){color:var(--wb-muted);font-variant-numeric:tabular-nums}
 #wb-study-ui .wb-drawer-chevron{transition:transform 180ms ease}
+#wb-study-ui .wb-drawer-chevron svg{display:block;width:14px;height:14px}
+#wb-study-ui .wb-drawer-toggle:hover{background:var(--wb-accent-soft)}
+#wb-study-ui .wb-course-state{display:inline-flex;align-items:center;gap:5px;flex:none;border-radius:6px;background:var(--wb-accent-soft);color:var(--wb-accent);padding:5px 7px;font-size:11px;white-space:nowrap}
+#wb-study-ui .wb-course-state::before{content:'';width:5px;height:5px;background:currentColor;border-radius:50%}
+#wb-study-ui .wb-scan-info{margin-top:8px;border-top:0;padding-top:0}
+#wb-study-ui .wb-scan-info>summary{padding:6px 0;font-size:11px}
+#wb-study-ui .wb-home-courses[data-more="true"]{mask-image:linear-gradient(to bottom,#000 calc(100% - 12px),transparent)}
+@starting-style{#wb-study-ui .wb-course-drawer[data-open="true"][data-reveal="true"] .wb-drawer-body{grid-template-rows:0fr}}
 #wb-study-ui .wb-course-drawer[data-open="true"] .wb-drawer-chevron{transform:rotate(180deg)}
 #wb-study-ui .wb-drawer-body{display:grid;grid-template-rows:0fr;transition:grid-template-rows 180ms ease}
 #wb-study-ui .wb-course-drawer[data-open="true"] .wb-drawer-body{grid-template-rows:1fr}

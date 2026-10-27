@@ -6,6 +6,7 @@
   }[c]));
   const icons = {
     collapse: '<path d="m6 15 6-6 6 6"/>',
+    chevron: '<path d="m6 9 6 6 6-6"/>',
     help: '<circle cx="12" cy="12" r="9"/><path d="M9.6 9a2.5 2.5 0 0 1 4.8 1c0 1.7-2.4 1.9-2.4 3.5M12 17h.01"/>',
     github: '<path d="M9 19c-4.3 1.3-4.3-2.2-6-2.7M15 22v-3.4c0-1 .1-1.6-.5-2.2 3.1-.4 6.4-1.5 6.4-7A5.4 5.4 0 0 0 19.4 6a5 5 0 0 0-.1-3.4S18.1 2.2 15 4a13.2 13.2 0 0 0-6 0C5.9 2.2 4.7 2.6 4.7 2.6A5 5 0 0 0 4.6 6a5.4 5.4 0 0 0-1.5 3.4c0 5.5 3.3 6.6 6.4 7-.5.5-.6 1.1-.5 2.2V22"/>',
     settings: '<path d="M9.17 5.16 L10.35 2.64 L13.65 2.64 L14.83 5.16 L14.83 5.16 L17.45 4.22 L19.78 6.55 L18.84 9.17 L18.84 9.17 L21.36 10.35 L21.36 13.65 L18.84 14.83 L18.84 14.83 L19.78 17.45 L17.45 19.78 L14.83 18.84 L14.83 18.84 L13.65 21.36 L10.35 21.36 L9.17 18.84 L9.17 18.84 L6.55 19.78 L4.22 17.45 L5.16 14.83 L5.16 14.83 L2.64 13.65 L2.64 10.35 L5.16 9.17 L5.16 9.17 L4.22 6.55 L6.55 4.22 L9.17 5.16Z"/><circle cx="12" cy="12" r="3.2"/>',
@@ -25,7 +26,7 @@
   const note = text => `<p class="wb-note">${esc(text)}</p>`;
   const kv = (label, value) => `<div class="kv"><span>${esc(label)}</span><span>${esc(value)}</span></div>`;
 
-  function create({ getModel, imageUrl, promotion = {}, onReset, onLocate, onCourseAction, onView, getShell, onRestoreShell }) {
+  function create({ getModel, imageUrl, promotion = {}, onReset, onLocate, onCourseAction, onFocusTask, onView, getShell, onRestoreShell }) {
     const box = document.createElement('section');
     box.id = 'wb-study-ui';
     box.setAttribute('aria-label', '芯位教育助手');
@@ -123,7 +124,8 @@
     const body = $('wb-body');
     let view = 'home', selectedCourse = null, selectedResource = null, courseFilter = 'all', model = null;
     let helpReturn = 'home';
-    let contentSignature = '', scheduled = false, runId = null;
+    let resourceFilter = 'all';
+    let contentSignature = '', summarySignature = '', scheduled = false, runId = null;
     const scroll = new Map(), chapters = new Map(), disclosures = new Map();
     let restore = null, storageKey = null, preferencesReady = false, viewRevision = 0;
     const sponsor = $('wb-sponsor'), sponsorLink = $('wb-sponsor-link');
@@ -199,7 +201,7 @@
       if (model.manualMode) {
         const busy = model.job?.running || model.operationPending || model.resetPending;
         const loading = ['go-agent', 'entry-home', 'scan-home'].includes(model.job?.phase);
-        return '<div class="wb-summary-heading"><strong>已发现 ' + model.courses.length + ' 门课程</strong><button class="wb-link" type="button" data-refresh-list ' + (busy ? 'disabled' : '') + '>重新扫描</button></div>' +
+        return '<div class="wb-summary-heading"><strong>已发现 ' + model.courses.length + ' 门课程</strong><button class="wb-link" type="button" data-refresh-list ' + (busy ? 'disabled' : '') + '>更新课表</button></div>' +
           (loading ? '<p class="wb-progress-meta" role="status">正在读取完整课表，请稍候…</p>' : '') +
           '<div class="wb-home-courses" role="region" aria-label="已发现的课程" tabindex="0">' +
           (model.courses.map((c, index) => homeCourseCard(c, index)).join('') || note(loading ? '课程会在识别后逐步显示。' : '没有发现正在上的课程，可重新扫描课表。')) + '</div>';
@@ -251,7 +253,7 @@
       if (!model.manualMode) return '';
       const disabled = model.job?.running || model.operationPending || model.resetPending || !model.job ? ' disabled' : '';
       const index = model.courses.indexOf(c);
-      const scan = '<button class="btn" type="button" data-course-action="inspect" data-action-course="' + index + '"' + disabled + '>' + (c.scannedAt ? '重新扫描' : '扫描目录') + '</button>';
+      const scan = '<button class="btn" type="button" data-course-action="inspect" data-action-course="' + index + '"' + disabled + '>' + (c.scannedAt ? '重扫本课目录' : '扫描目录') + '</button>';
       return '<div class="wb-actions wb-actions-inline wb-course-actions">' + learningAction(c, index) + scan + '</div>';
     }
     function learningAction(c, index) {
@@ -260,13 +262,14 @@
       const paused = active && model.job?.phase === 'paused';
       const disabled = model.job?.running || model.operationPending || model.resetPending || !model.job ||
         (paused && model.job.ownerTabId !== model.tabId);
-      const label = running ? model.job.operation === 'inspect' ? '扫描中…' : '学习中…' : paused ? '继续学习' :
+      if (running) return '<span class="wb-course-state" role="status">' + (model.job.operation === 'inspect' ? '扫描中' : '学习中') + '</span>';
+      const label = paused ? '继续学习' :
         c.scanState === 'error' ? '重试本课' : isCourseComplete(c) ? '重新核对' : '开始学习';
       return '<button class="btn primary wb-course-start" type="button" data-course-action="' + (paused ? 'continue' : 'learn') + '" data-action-course="' + index + '" aria-label="' + esc(label + '：' + c.title) + '"' + (disabled ? ' disabled' : '') + '>' + label + '</button>';
     }
     function homeCourseCard(c, index) {
       const status = model.job?.running && model.job.targetIndex === index ?
-        model.job.operation === 'inspect' ? '正在核对本课目录' : '正在学习本课' :
+        '' :
         c.scanState === 'error' ? '目录未完整读取，请重试' :
         c.scanState === 'ready' ? isCourseComplete(c) ? '音视频已完成' : '' :
         c.scannedAt ? '待重新核对' : '点击开始，自动扫描本课';
@@ -276,9 +279,10 @@
       let drawer = '';
       if (scanning) disclosures.delete(drawerKey);
       if (!scanning && c.scanState === 'ready' && data && data.total != null) {
-        if (!disclosures.has(drawerKey)) disclosures.set(drawerKey, true);
+        const reveal = !disclosures.has(drawerKey);
+        if (!disclosures.has(drawerKey)) disclosures.set(drawerKey, model.job?.targetIndex === index);
         const open = disclosures.get(drawerKey);
-        drawer = '<div class="wb-course-drawer" data-open="' + open + '"><button class="wb-drawer-toggle" type="button" data-course-drawer="' + index + '" aria-expanded="' + open + '" aria-controls="wb-drawer-' + index + '"><span>本课学习项</span><span>' + data.confirmed + ' / ' + data.total + '</span><span class="wb-drawer-chevron" aria-hidden="true">⌄</span></button><div class="wb-drawer-body" id="wb-drawer-' + index + '" aria-hidden="' + !open + '"' + (open ? '' : ' inert') + '><div class="wb-drawer-clip"><div class="wb-drawer-content">' + progressBar('本课学习项完成比例（平台确认）', data.confirmed, data.total) + '<div class="wb-drawer-footer"><span>' + (data.total ? '待完成 ' + remaining(data) + ' 项' : '没有音视频') + '</span><button class="wb-link" type="button" data-course="' + index + '">查看明细 ›</button></div></div></div></div></div>';
+        drawer = '<div class="wb-course-drawer" data-open="' + open + '" data-reveal="' + (reveal && open) + '"><button class="wb-drawer-toggle" type="button" data-course-drawer="' + index + '" aria-expanded="' + open + '" aria-controls="wb-drawer-' + index + '" title="展开或收起学习项"><span>音视频已确认</span><span>' + data.confirmed + ' / ' + data.total + '</span><span class="wb-drawer-chevron" aria-hidden="true">' + svg('chevron') + '</span></button><div class="wb-drawer-body" id="wb-drawer-' + index + '" aria-hidden="' + !open + '"' + (open ? '' : ' inert') + '><div class="wb-drawer-clip"><div class="wb-drawer-content">' + progressBar('本课学习项完成比例（平台确认）', data.confirmed, data.total) + '<div class="wb-drawer-footer"><span>' + (data.total ? '待完成 ' + remaining(data) + ' 项' : '没有音视频') + '</span><button class="wb-link" type="button" data-course="' + index + '">查看明细 ›</button></div></div></div></div></div>';
       }
       return '<article class="wb-home-course" data-current="' + (model.job?.targetIndex === index) + '"><div class="wb-home-course-row"><button class="wb-home-course-info" type="button" data-course="' + index + '" aria-label="查看课程详情：' + esc(c.title) + '"><strong>' + esc(c.title) + '</strong>' + (status ? '<span>' + esc(status) + '</span>' : '') + '</button>' + learningAction(c, index) + '</div>' + drawer + '</article>';
     }
@@ -305,20 +309,21 @@
       const items = c.directory?.items;
       let html = title(c.title, 'courses', '全部课程') + `<p class="wb-caption">${esc(courseCount(c))}</p><div class="wb-course-progress">${learningProgress(c)}</div>`;
       html += courseActions(c);
-      if (model.manualMode && c.scannedAt) html += '<p class="wb-caption">上次完整扫描：' + esc(new Date(c.scannedAt).toLocaleString('zh-CN', { hour12: false })) + '</p>';
-      if (model.manualMode && c.scanState !== 'ready' && c.scannedAt) html += note('当前为上次完整结果，请重新扫描核对最新状态。');
+      if (model.manualMode && c.scannedAt) html += '<details class="wb-more wb-scan-info" data-ui-disclosure="scan-info"><summary>扫描信息' + (!c.live || c.directoryStale ? ' · 目录快照' : '') + '</summary><p class="wb-caption">上次完整扫描：' + esc(new Date(c.scannedAt).toLocaleString('zh-CN', { hour12: false })) + '</p><p class="wb-caption">' + (c.scanState !== 'ready' ? '历史结果，开始学习时重新核对。' : '统计使用已保存的任务记录；目录快照供查看。') + '</p></details>';
       if (model.manualMode && c.scanError) html += note(c.scanError);
       if (!items) {
         if (model.job?.running && model.activeCourseKey === courseKey(c)) return html + note('正在读取课程目录，请稍候。已识别的条目会在目录就绪后显示。');
         if (c.failures?.length || c.status === 'manual') return html + note(`目录尚未读取完成，请检查网站页面。${(c.failures || []).join('；')}`);
         return html + note(model.manualMode ? '尚未读取这门课的目录。“开始学习”会核对目录后自动学习；“扫描目录”只读取结果。' : '尚未读取这门课的目录。统计完成后会展示音视频明细。');
       }
-      if (!c.live || c.directoryStale) html += note('当前显示上次读取的目录，平台状态可能已变化。');
+      if ((!c.live || c.directoryStale) && !model.manualMode) html += note('当前显示上次读取的目录，平台状态可能已变化。');
       if (!items.length) return html + note('已读取目录，本课没有可处理的音视频。文档、考试和作业需自行处理。');
       const media = items.filter(isMedia), others = items.filter(i => !isMedia(i));
+      html += '<div class="wb-filters" role="group" aria-label="学习项筛选">' + [['all', '全部'], ['pending', '待完成']].map(([key, label]) => '<button type="button" data-resource-filter="' + key + '" aria-pressed="' + (resourceFilter === key) + '">' + label + '</button>').join('') + '</div>';
       const groups = new Map();
-      for (const item of media) { const group = item.chapterTitle || '音视频目录'; if (!groups.has(group)) groups.set(group, []); groups.get(group).push(item); }
-      for (const [name, rows] of groups) {
+      for (const item of media) { if (resourceFilter === 'pending' && resourceStatus(item, c) === '平台已确认') continue; const group = item.chapterTitle || '音视频目录'; if (!groups.has(group)) groups.set(group, []); groups.get(group).push(item); }
+      const orderedGroups = [...groups].sort((a, b) => Number(b[1].some(i => i.key === model.activeResourceKey)) - Number(a[1].some(i => i.key === model.activeResourceKey)));
+      for (const [name, rows] of orderedGroups) {
         const key = `${selectedCourse}:${name}`;
         const current = rows.some(i => i.key === model.activeResourceKey);
         const open = chapters.has(key) ? chapters.get(key) : current || groups.size === 1;
@@ -331,6 +336,7 @@
       }
       if (others.length) html += `<details class="wb-chapter"><summary>其他资源 · ${others.length} 项，不自动处理</summary>${others.map(i => `<div class="wb-row-meta">${esc(i.title)} · ${types[i.mediaType] || '其他'}</div>`).join('')}</details>`;
       if (!media.length) html += note('这门课只有其他类型的资源，没有可自动处理的音视频。');
+      else if (!groups.size) html += note('没有待完成的音视频。');
       return html;
     }
     function resourcePage() {
@@ -363,7 +369,7 @@
         <details class="wb-more" data-ui-disclosure="guide-limits"><summary>哪些内容需要自己处理</summary><p class="wb-caption">登录失效、验证码、题目和平台限制需要人工处理。当前按正在上的课程扫描，不提供仅考核课程筛选或自定义节数。文档、作业和考试仍需自行处理；最终完成状态以平台为准。</p></details>`;
     }
     function aboutPage() {
-      let html = title('关于与服务', 'settings', '设置') + '<p class="wb-caption">Xinwei Course Watcher · 1.3.0 按需版本</p>' + note('面向 Beeline AI 学习页面。保留原作者署名与 Apache License 2.0。');
+      let html = title('关于与服务', 'settings', '设置') + '<p class="wb-caption">Xinwei Course Watcher · 1.3.1 按需版本</p>' + note('面向 Beeline AI 学习页面。保留原作者署名与 Apache License 2.0。');
       const data = sponsorData();
       if (data) html += `<p class="wb-caption">第三方商业服务 · 非平台或原作者官方服务</p><a class="wb-external" href="${esc(data.url)}" target="_blank" rel="noopener noreferrer sponsored">${esc(data.brand)} · ${esc(data.items.join(' / '))} ↗</a>`;
       return html;
@@ -382,7 +388,7 @@
       const top = body.scrollTop;
       const focus = box.ownerDocument.activeElement;
       const focused = page.contains(focus);
-      const focusAttr = focused && ['data-resource', 'data-course', 'data-course-filter', 'data-ui-view', 'data-ui-locate'].find(attr => focus.hasAttribute(attr));
+      const focusAttr = focused && ['data-resource', 'data-course', 'data-course-filter', 'data-resource-filter', 'data-ui-view', 'data-ui-locate'].find(attr => focus.hasAttribute(attr));
       const focusKey = focusAttr ? focus.getAttribute(focusAttr) : null;
       const summaryParent = focused && focus.matches('summary') ? focus.parentElement : null;
       const summaryKey = summaryParent?.dataset.uiDisclosure || summaryParent?.dataset.chapter;
@@ -416,7 +422,7 @@
       try {
         if (!storageKey || !preferencesReady) return;
         const snapshot = {
-          runId, view: view === 'reset' ? 'settings' : view, helpReturn, selectedCourse, selectedResource, courseFilter,
+          runId, view: view === 'reset' ? 'settings' : view, helpReturn, selectedCourse, selectedResource, courseFilter, resourceFilter,
           scroll: [...scroll].slice(-300), chapters: [...chapters].slice(-300), disclosures: [...disclosures].slice(-300), shell: getShell?.()
         };
         Promise.resolve(globalThis.chrome?.storage?.local?.set({ [storageKey]: snapshot })).catch(() => {});
@@ -429,7 +435,7 @@
       viewRevision++;
       rememberDisclosures(box.querySelector(`.wb-view[data-view="${view}"]`));
       scroll.set(scrollKey(), body.scrollTop);
-      if ('course' in selection) { selectedCourse = selection.course; selectedResource = null; }
+      if ('course' in selection) { if (selectedCourse !== selection.course) resourceFilter = 'all'; selectedCourse = selection.course; selectedResource = null; }
       if ('resource' in selection) selectedResource = selection.resource;
       if ('filter' in selection) courseFilter = selection.filter;
       view = next; contentSignature = '';
@@ -469,6 +475,7 @@
           selectedCourse = typeof restore.selectedCourse === 'string' ? restore.selectedCourse : null;
           selectedResource = typeof restore.selectedResource === 'string' ? restore.selectedResource : null;
           courseFilter = ['all', 'complete', 'pending', 'attention', 'unscanned'].includes(restore.courseFilter) ? restore.courseFilter : 'all';
+          resourceFilter = restore.resourceFilter === 'pending' ? 'pending' : 'all';
           for (const entry of Array.isArray(restore.scroll) ? restore.scroll.slice(-300) : []) {
             if (Array.isArray(entry) && typeof entry[0] === 'string' && Number.isFinite(entry[1])) scroll.set(entry[0], Math.max(0, entry[1]));
           }
@@ -484,32 +491,43 @@
         restore = null;
       }
       if (runId !== model.job?.runId) {
+        resourceFilter = 'all';
         if (runId != null) { selectedCourse = null; selectedResource = null; courseFilter = 'all'; chapters.clear(); disclosures.clear(); scroll.clear(); $('wb-overview-more').open = false; contentSignature = ''; }
         runId = model.job?.runId;
       }
       box.dataset.view = view; box.dataset.tone = model.home.tone;
       syncSponsor();
       for (const page of box.querySelectorAll('[data-view]')) page.hidden = page.dataset.view !== view;
-      $('wb-ui-nav').hidden = true; $('wb-ui-task-strip').hidden = view === 'home' || !model.hasTaskState;
+      const otherTaskTab = model.job?.running && Number.isInteger(model.job.ownerTabId) && model.job.ownerTabId !== model.tabId;
+      $('wb-ui-nav').hidden = true; $('wb-ui-task-strip').hidden = (view === 'home' && !otherTaskTab) || !model.hasTaskState;
+      const taskLink = $('wb-ui-task-strip').querySelector('button');
+      taskLink.textContent = otherTaskTab ? '前往学习标签页' : '返回助手首页';
+      taskLink.toggleAttribute('data-focus-task', Boolean(otherTaskTab));
+      taskLink.toggleAttribute('data-ui-view', !otherTaskTab);
+      if (!otherTaskTab) taskLink.dataset.uiView = 'home';
       text('wb-ui-status', model.home.status); text('wb-ui-title', model.home.title); text('wb-ui-subtitle', model.home.subtitle);
       const choosing = model.manualMode && model.job?.phase === 'selection' && model.job.lastOperation === 'list';
-      $('wb-ui-title').hidden = Boolean(choosing);
+      const playing = model.manualMode && model.job?.running && model.job.phase === 'course' && model.job.targetPurpose === 'play';
+      $('wb-ui-title').hidden = Boolean(choosing || playing);
       $('wb-ui-subtitle').hidden = !model.home.subtitle || Boolean(choosing);
       text('wb-ui-caption', model.home.caption); $('wb-ui-caption').hidden = !model.home.caption;
       $('wb-home-summary').hidden = !model.job;
       $('wb-home-summary').classList.toggle('wb-home-selection', model.manualMode);
       const summary = $('wb-home-task-progress');
       const summaryHtml = model.job ? taskSummary() : '';
-      if (summary.innerHTML !== summaryHtml) {
+      if (summarySignature !== summaryHtml) {
         const focus = summary.contains(document.activeElement) ? document.activeElement : null;
         const attribute = focus && ['data-course-filter', 'data-course', 'data-action-course', 'data-refresh-list', 'data-course-drawer'].find(a => focus.hasAttribute(a));
         const value = attribute && focus.getAttribute(attribute);
         const listTop = summary.querySelector('.wb-home-courses')?.scrollTop || 0;
         summary.innerHTML = summaryHtml;
+        summarySignature = summaryHtml;
         if (attribute) [...summary.querySelectorAll('button')].find(el => el.getAttribute(attribute) === value)?.focus({preventScroll: true});
         const list = summary.querySelector('.wb-home-courses');
         if (list) list.scrollTop = listTop;
       }
+      const courseList = summary.querySelector('.wb-home-courses');
+      if (courseList) courseList.dataset.more = String(courseList.scrollHeight > courseList.clientHeight + courseList.scrollTop + 2);
       const current = model.courses.find(c => courseKey(c) === model.activeCourseKey);
       const courseProgress = $('wb-home-course-progress'), courseHtml = current ? learningProgress(current, true) : '';
       courseProgress.hidden = model.manualMode || !current || !model.job;
@@ -519,7 +537,7 @@
         if (focused) courseProgress.querySelector('button')?.focus({preventScroll: true});
       }
       $('wb-ui-directory').hidden = true;
-      text('wb-ui-target-badge', model.home.targetBadge); $('wb-ui-target-badge').hidden = !model.home.targetBadge;
+      text('wb-ui-target-badge', model.home.targetBadge.replace(/^(\d+)% 后切换$/, '播放至 $1% 后切换')); $('wb-ui-target-badge').hidden = !model.home.targetBadge;
       text('wb-ui-notice', model.home.notice); $('wb-ui-notice').hidden = !model.home.notice;
       const p = model.home.progress;
       $('wb-ui-progress').hidden = !p;
@@ -567,10 +585,13 @@
         const open = !disclosures.get(key);
         disclosures.set(key, open);
         control.setAttribute('aria-expanded', String(open));
+        control.title = open ? '收起学习项' : '展开学习项';
         const drawer = control.closest('.wb-course-drawer'), body = drawer.querySelector('.wb-drawer-body');
         drawer.dataset.open = String(open); body.setAttribute('aria-hidden', String(!open));
         body.toggleAttribute('inert', !open); saveView(); return;
       }
+      if (control.hasAttribute('data-focus-task')) { onFocusTask?.(); return; }
+      if (control.hasAttribute('data-resource-filter')) { resourceFilter = control.dataset.resourceFilter; contentSignature = ''; render(); return; }
       if (control.hasAttribute('data-help-return')) { navigate(helpReturn); $('wb-help').focus({ preventScroll: true }); return; }
       if (control.hasAttribute('data-course-action')) {
         const c = model.courses[Number(control.dataset.actionCourse)];
@@ -592,6 +613,10 @@
       else if (control.hasAttribute('data-ui-locate')) onLocate?.(selectedCourse, control.dataset.uiLocate);
       else if (control.id === 'wb-reset' || control.id === 'wb-ui-reset-retry') onReset?.();
     });
+    box.addEventListener('scroll', event => {
+      const list = event.target;
+      if (list.matches?.('.wb-home-courses')) list.dataset.more = String(list.scrollHeight > list.clientHeight + list.scrollTop + 2);
+    }, true);
     box.addEventListener('toggle', event => {
       const el = event.target;
       if (el.closest?.('.wb-view')?.dataset.view !== view) return;

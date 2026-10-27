@@ -115,7 +115,7 @@ test('task phases, pending operations and local manual stop have truthful home s
     state.startPending = true; check('正在开始'); assert.equal(box.querySelector('#wb-stop').hidden, false); assert.equal(box.querySelector('#wb-stop').disabled, false); state.startPending = false;
     state.pausePending = true; check('正在暂停'); assert.equal(box.querySelector('#wb-stop').disabled, true); state.pausePending = false;
     job.phase = 'interrupted'; check('任务已中断');
-    job.phase = 'manual'; job.reason = '请处理验证码'; check('需要你处理'); assert.match(box.querySelector('#wb-ui-notice').textContent, /验证码/);
+    job.phase = 'manual'; job.reason = '请处理验证码'; check('需要你处理'); assert.match(box.querySelector('#wb-ui-subtitle').textContent, /验证码/); assert.equal(box.querySelector('#wb-ui-notice').hidden, true);
     state.storageFailed = true; check('保存失败'); assert.equal(box.querySelector('#wb-start').hidden, true); state.storageFailed = false;
     state.resetPending = true; check('正在重置'); state.resetPending = false;
     state.mode = 'resetting'; check('重置尚未完成');

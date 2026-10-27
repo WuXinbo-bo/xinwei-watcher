@@ -111,3 +111,37 @@ test('course drawer waits for complete scan, opens once, remembers closing and s
     assert.equal(f.box.querySelector('[data-course-drawer="1"]'),null,'unscanned next course does not inherit progress');
   } finally {f.window.close();}
 });
+
+test('manual progress uses the same saved records in live and remote tabs',()=>{
+  const f=setup(), remote=homeFixture([]);
+  try {
+    f.job.workflow='manual';f.job.phase='selection';f.job.candidates[0].scanState='ready';
+    remote.api.state.tabId=2;remote.api.state.job=JSON.parse(JSON.stringify(f.job));
+    f.api.getMenuItems()[1].querySelector('.lecture-status').innerHTML='<i class="done-icon"></i>';
+    f.api.state.processedCourseKey=f.api.currentCourseKey();
+    f.api.state.processedItems.set(f.job.candidates[0].directory.items[1].key,{confirmed:true});
+    const live=f.ui.render(), other=remote.api.state.uiController.render();
+    assert.equal(live.overview.courseProgress[0].confirmed,1);
+    assert.equal(other.overview.courseProgress[0].confirmed,1);
+    const key=f.job.candidates[0].directory.items[1].key;
+    f.job.candidates[0].records[key]={confirmed:true};
+    remote.api.state.job=JSON.parse(JSON.stringify(f.job));
+    assert.equal(f.ui.render().overview.courseProgress[0].confirmed,2);
+    assert.equal(remote.api.state.uiController.render().overview.courseProgress[0].confirmed,2);
+  } finally {f.window.close();remote.window.close();}
+});
+
+test('running home shows a status badge and no duplicate course title; other drawers stay compact',()=>{
+  const f=setup();
+  try {
+    Object.assign(f.job,{workflow:'manual',running:true,phase:'course',operation:'play',ownerTabId:1});
+    f.job.candidates[0].scanState='ready';f.job.candidates[1].scanState='ready';
+    f.ui.render();
+    const card=f.box.querySelector('.wb-home-course');
+    assert.match(card.querySelector('.wb-course-state').textContent,/学习中/);
+    assert.equal(card.querySelector('.wb-course-start'),null);
+    assert.equal(f.box.querySelector('#wb-ui-title').hidden,true);
+    assert.equal(f.box.querySelector('[data-course-drawer="0"]').getAttribute('aria-expanded'),'true');
+    assert.equal(f.box.querySelector('[data-course-drawer="1"]').getAttribute('aria-expanded'),'false');
+  } finally {f.window.close();}
+});

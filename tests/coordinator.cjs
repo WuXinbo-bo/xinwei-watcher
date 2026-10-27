@@ -28,7 +28,7 @@ function coordinator(options = {}) {
   const manifest = JSON.parse(fs.readFileSync('manifest.json', 'utf8'));
   let failStorage = false, messageListener, nextId = 1;
   const tabs = new Map(), receivers = new Map(), navigation = [], removed = [], reloads = [];
-  const storage = { session: {}, local: {} };
+  const storage = { session: {}, local: {} }, windowFocus = [];
   const area = name => ({
     async get(key) { if (failStorage) throw new Error('disk error'); return { [key]: clone(storage[name][key]) }; },
     async set(values) { if (failStorage) throw new Error('disk error'); Object.assign(storage[name], clone(values)); }
@@ -36,6 +36,7 @@ function coordinator(options = {}) {
   const onCreated = event(), onRemoved = event(), onNavigation = event();
   const onStorageChanged = event();
   const chrome = {
+    windows: { async update(id, info) { windowFocus.push({ id, ...info }); } },
     storage: { session: area('session'), local: area('local'), onChanged: onStorageChanged },
     runtime: { onMessage: { addListener(fn) { messageListener = fn; } } },
     tabs: {
@@ -105,7 +106,7 @@ function coordinator(options = {}) {
     };
   };
   return {
-    addTab, request, connect, tabs, storage, navigation, removed, reloads, onNavigation, onTabRemoved: onRemoved, onStorageChanged,
+    addTab, request, connect, tabs, storage, navigation, removed, reloads, windowFocus, onNavigation, onTabRemoved: onRemoved, onStorageChanged,
     failStorage: () => { failStorage = true; },
     restartWorker: () => { vm.runInNewContext(fs.readFileSync('background.js', 'utf8'), globals); },
     restartBrowser: () => { storage.session = {}; },

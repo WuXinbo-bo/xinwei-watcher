@@ -1259,6 +1259,17 @@
     job = await expireOpening(job);
     const tabId = sender.tab.id;
     if (msg.action === 'get') return job;
+    if (msg.action === 'focus-task') {
+      if (!job || msg.runId !== job.runId || msg.generation !== job.generation ||
+          resetEpoch(msg) !== resetEpoch(job)) throw new Error('任务已变化，请重试');
+      const targetId = job.ownerTabId;
+      if (!Number.isInteger(targetId)) throw new Error('学习标签页已关闭');
+      const target = await chrome.tabs.get(targetId);
+      if (!isSite({ ...sender, url: target.url })) throw new Error('学习标签页已离开网站');
+      await chrome.tabs.update(targetId, { active: true });
+      if (Number.isInteger(target.windowId)) await chrome.windows.update(target.windowId, { focused: true });
+      return job;
+    }
     if (resetEpoch(msg) !== resetEpoch(job)) throw new Error('TASK_CANCELLED');
     if (msg.action === 'reset') return resetTask(job, sender);
     if (msg.action === 'course-select') return selectCourse(job, msg, sender);
