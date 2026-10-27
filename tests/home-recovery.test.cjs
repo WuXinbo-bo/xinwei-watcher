@@ -34,10 +34,16 @@ async function blockedInspection() {
   return { c, id, f, doc, entry, expire, clicks: () => clicks };
 }
 
+async function beginInspection(f) {
+  await f.api.start();
+  await waitFor(() => f.api.state.job?.phase === 'selection' && !f.api.state.jobPromise);
+  await f.api.start({ purpose: 'inspect', index: 0, candidateKey: f.api.state.job.candidates[0].key });
+}
+
 test('统计弹窗被拦截时实际点击两次重试，耗尽后提示授权，点击继续可再次打开', async () => {
   const { c, id, f, doc, entry, expire, clicks } = await blockedInspection();
   try {
-    doc.getElementById('wb-start').click();
+    await beginInspection(f);
     await waitFor(() => clicks() === 1 && !f.api.state.jobPromise);
     const runId = c.storage.session[KEY].runId;
     for (let attempt = 1; attempt <= 2; attempt += 1) {
@@ -71,7 +77,7 @@ test('统计弹窗被拦截时实际点击两次重试，耗尽后提示授权�
 test('统计重试执行器忙时不丢失授权，空闲后只点击一次', async () => {
   const { f, doc, expire, clicks } = await blockedInspection();
   try {
-    doc.getElementById('wb-start').click();
+    await beginInspection(f);
     await waitFor(() => clicks() === 1 && !f.api.state.jobPromise);
     f.api.state.jobPromise = Promise.resolve();
     expire();
@@ -89,7 +95,7 @@ for (const cancel of ['pause', 'late-tab']) {
   test(`统计重试手势期间${cancel === 'pause' ? '用户暂停' : '原标签迟到'}取消最终点击`, async () => {
     const { c, id, f, doc, entry, expire, clicks } = await blockedInspection();
     try {
-      doc.getElementById('wb-start').click();
+      await beginInspection(f);
       await waitFor(() => clicks() === 1 && !f.api.state.jobPromise);
       let cancelTask;
       entry.addEventListener('mousedown', () => {
@@ -138,12 +144,12 @@ for (const obstruction of ['empty', 'loading']) {
       const runId = interrupted.runId;
       if (loading) loading.remove();
       else doc.querySelector('.cards').innerHTML = homeCard('待采集课程');
-      await waitFor(() => c.storage.session[KEY]?.phase === 'opening', 6000);
+      await waitFor(() => c.storage.session[KEY]?.phase === 'selection', 6000);
       const resumed = c.storage.session[KEY];
       assert.equal(resumed.runId, runId);
-      assert.equal(resumed.running, true);
+      assert.equal(resumed.running, false);
       assert.deepEqual(resumed.candidates.map(item => item.title), ['待采集课程']);
-      assert.equal(resumed.targetPurpose, 'inspect');
+      assert.equal(resumed.targetPurpose || '', '');
     } finally { await stopFixture(f); }
   });
 }
@@ -225,7 +231,7 @@ test('正常分页点击被暂时忽略后，任务等待再尝试并自动采�
     assert.equal(clickedAt.length, 1);
     assert.equal(c.storage.session[KEY].phase, 'scan-home');
     assert.equal(c.storage.session[KEY].running, true);
-    await waitFor(() => c.storage.session[KEY]?.phase === 'opening', 9000);
+    await waitFor(() => c.storage.session[KEY]?.phase === 'selection', 9000);
     assert.equal(c.storage.session[KEY].runId, runId);
     assert.deepEqual(c.storage.session[KEY].candidates.map(item => [item.title, item.page]), [
       ['第一页课程', 1], ['第二页课程', 2]
@@ -302,9 +308,9 @@ test('分页按下期间当前页卡片更新导致取消最终点击，重新�
     assert.equal(c.storage.session[KEY].running, true);
     assert.equal(c.storage.session[KEY].phase, 'scan-home');
     assert.equal(c.storage.session[KEY].candidates.length, 0);
-    await waitFor(() => c.storage.session[KEY]?.phase === 'opening', 6000);
+    await waitFor(() => c.storage.session[KEY]?.phase === 'selection', 6000);
     assert.equal(c.storage.session[KEY].runId, runId);
-    assert.equal(c.storage.session[KEY].running, true);
+    assert.equal(c.storage.session[KEY].running, false);
     assert.deepEqual(c.storage.session[KEY].candidates.map(item => [item.title, item.page]), [
       ['第一页课程', 1], ['第二页课程', 2]
     ]);

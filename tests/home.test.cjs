@@ -149,7 +149,7 @@ test('旧任务缺少真实入口时重新统计，并保留未自然结束记�
   } finally { h.dom.window.close(); }
 });
 
-test('全流程模拟：新标签统计，零音视频跳过，课程末刷新核对后返回下一门', { timeout: 45000 }, async () => {
+test('旧协议回归：新标签统计，零音视频跳过，课程末刷新核对后返回下一门', { timeout: 45000 }, async () => {
   const c = coordinator();
   const HOME = 'https://www.beeline-ai.com/myBank/courseResearch';
   const KEY = 'xinwei-job-v3';
@@ -274,9 +274,11 @@ test('全流程模拟：新标签统计，零音视频跳过，课程末刷新�
   });
 
   try {
-    await makeHomeDocument().api.start();
+    const legacyHome = makeHomeDocument();
+    await legacyHome.api.jobCommand('start', { scope: 'all', singlePass: true });
+    await legacyHome.api.syncSharedJob();
     try {
-      await waitFor(() => c.storage.session[KEY]?.phase === 'finished' || callbackErrors.length, 10000);
+      await waitFor(() => c.storage.session[KEY]?.phase === 'finished' || callbackErrors.length, 20000);
     } catch (error) {
       console.error(JSON.stringify({
         job: c.storage.session[KEY], callbackErrors: callbackErrors.map(e => e.message),

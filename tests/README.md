@@ -27,6 +27,8 @@ npm test
 
 ## 可选浏览器 UI 验收
 
+1.2.0 按需流程和本轮结果见 [ON_DEMAND.md](../docs/ON_DEMAND.md)。on-demand.test.cjs 验证所选课程授权和刷新边界；public-recovery-integration.test.cjs 通过公开界面逐课扫描及开始；home.test.cjs 中的旧调度器全流程仅保留为旧协议回归。
+
 `ui-browser-smoke.cjs` 不包含在 `npm test` 中。它使用测试环境提供的 Playwright，在独立临时配置中实际加载扩展，以本地 fixture 拦截页面与外链，不访问课程数据或启动课程任务。项目运行依赖与锁文件不因此增加 Playwright。
 
 在已提供 Playwright 的环境执行，可通过 `NODE_PATH` 指向该测试工具目录：

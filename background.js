@@ -108,7 +108,8 @@
       keys.add(item.key);
       return { key: item.key, title: item.title, mediaType: item.mediaType,
         durationSeconds: item.durationSeconds,
-        ...(typeof item.chapterTitle === 'string' ? { chapterTitle: item.chapterTitle.slice(0, 160) } : {}) };
+        ...(typeof item.chapterTitle === 'string' ? { chapterTitle: item.chapterTitle.slice(0, 160) } : {}),
+        ...(typeof item.observedCompleted === 'boolean' ? { observedCompleted: item.observedCompleted } : {}) };
     });
     const snapshot = { version: 1, courseKey: key, items };
     if (raw.signature != null) snapshot.signature = raw.signature;
@@ -118,6 +119,18 @@
   async function takeOverRefreshedOwner(job, msg, sender) {
     const previousGeneration = job.generation;
     if (!canOperate(job)) return job;
+    // User refreshes require explicit Continue; the executor's own bounded
+    // verification reload is the only continuation authorized in advance.
+    const expected = job.expectedRefresh;
+    const authorizedRefresh = expected && expected.tabId === sender.tab.id &&
+      expected.courseKey === courseKey(sender) && expected.generation === job.generation &&
+      expected.expiresAt >= Date.now();
+    if (job.workflow === 'manual' && !authorizedRefresh) {
+      bindOwnerInstance(job, sender.tab.id, msg.instanceId);
+      if (route(sender) === 'home') bindHomeInstance(job, msg.instanceId);
+      return save(pause(job, '页面已刷新，记录已保留；请点击继续或重新扫描本课。'));
+    }
+    delete job.expectedRefresh;
     bindOwnerInstance(job, sender.tab.id, msg.instanceId);
     if (['agent', 'home'].includes(route(sender))) bindHomeInstance(job, msg.instanceId);
     job.generation += 1;
@@ -310,7 +323,7 @@
     mergeObservation(saved, observation);
     // Disk checkpoints never authorize an automatic browser restart.
     saved.running = false;
-    if (!['finished', 'idle', 'resetting'].includes(saved.phase)) {
+    if (!['finished', 'idle', 'resetting', 'selection'].includes(saved.phase)) {
       saved.phase = 'interrupted';
       saved.reason = '浏览器或扩展已重启。请回到首页点击开始，重新核对课程。';
     }
@@ -424,8 +437,13 @@
     if (job.running) job.resumePhase = job.phase;
     job.running = false;
     job.phase = manual ? 'manual' : 'paused';
+    delete job.expectedRefresh;
     job.generation += 1;
     job.reason = reason;
+    if (job.workflow === 'manual' && job.operation === 'inspect') {
+      const candidate = job.candidates?.[job.targetIndex ?? job.selectedIndex];
+      if (candidate) { candidate.scanState = manual ? 'error' : 'paused'; candidate.scanError = reason || '扫描已暂停'; }
+    }
     addLog(job, reason || '已暂停：停止播放和后续自动操作', manual ? 'err' : 'info');
     return job;
   }
@@ -1146,6 +1164,88 @@
       job.interruption.key === msg.key) delete job.interruption;
   }
 
+  function awaitSelection(job, message) {
+    job.running = false;
+    job.phase = 'selection';
+    job.generation += 1;
+    delete job.expectedRefresh;
+    job.lastOperation = job.operation;
+    job.operation = '';
+    job.selectedIndex = null;
+    delete job.resumePhase;
+    delete job.interruption;
+    delete job.reason;
+    addLog(job, message);
+    return job;
+  }
+
+  async function selectCourse(job, msg, sender) {
+    if (!job || job.workflow !== 'manual' || job.running ||
+        job.phase === 'resetting' || msg.runId !== job.runId ||
+        msg.generation !== job.generation || isRetiredInstance(job, sender.tab.id, msg.instanceId)) {
+      throw new Error('TASK_CANCELLED');
+    }
+    const candidate = Number.isInteger(msg.index) && job.candidates[msg.index];
+    if (!candidate || msg.candidateKey !== (candidate.courseKey || candidate.key) ||
+        !['inspect', 'play'].includes(msg.purpose)) throw new Error('课程选择已变化，请重新选择');
+    if (msg.purpose === 'play' && (!Number.isFinite(candidate.scannedAt) ||
+        !candidate.directory || candidate.scanState !== 'ready')) {
+      throw new Error('请先完整扫描这门课的目录');
+    }
+    const current = await chrome.tabs.get(sender.tab.id);
+    if (!isSite({ ...sender, url: current.url }) ||
+        (pageBlockingReason(msg))) throw new Error('请先核对网站页面');
+    // Every explicit operation gets a new generation. Late scan/play writes
+    // from any previous operation can no longer authorize navigation.
+    job.generation += 1;
+    job.running = true;
+    job.operation = msg.purpose;
+    job.selectedIndex = msg.index;
+    job.targetIndex = msg.index;
+    job.targetPurpose = msg.purpose;
+    job.homeTabId = sender.tab.id;
+    job.homeInstance = msg.instanceId;
+    job.workerTabId = null;
+    job.ownerTabId = sender.tab.id;
+    job.ownerInstance = msg.instanceId;
+    job.singlePass = true;
+    if (validTargetPercent(msg.targetPercent)) job.targetPercent = msg.targetPercent;
+    for (const key of ['reason', 'resumePhase', 'returningTabId', 'returnDeadline',
+      'navigationRecovery', 'openRecovery', 'interruption', 'expectedRefresh']) delete job[key];
+    delete candidate.scanDraft;
+    if (msg.purpose === 'inspect') {
+      candidate.scanState = 'scanning';
+      delete candidate.scanError;
+    } else {
+      for (const key of ['pass', 'finalPass', 'lastRefresh', 'refreshTokens', 'currentResource', 'retryAt']) delete candidate[key];
+      // A new user-requested pass retries unconfirmed items with a fresh
+      // attempt budget while keeping historical evidence for reference.
+      candidate.previousRecords = copy(candidate.records || {});
+      candidate.records = Object.fromEntries(Object.entries(candidate.records || {})
+        .filter(([, record]) => record.confirmed === true));
+      candidate.failures = []; candidate.unconfirmed = []; candidate.unfinished = [];
+      candidate.status = 'inspected';
+    }
+    if (candidate.learnUrl) {
+      verifiedLearnUrl(candidate);
+      job.workerTabId = sender.tab.id;
+      if (route(current) === 'learn' && courseKey(current) === candidate.courseKey) {
+        job.phase = 'course';
+        addLog(job, msg.purpose === 'inspect' ? `仅扫描本课：${candidate.title}` : `仅学习本课：${candidate.title}`);
+        return save(job);
+      }
+      job.phase = 'opening';
+      job.openDeadline = Date.now() + 45000;
+      bindOwnerInstance(job, sender.tab.id, null);
+      await save(job);
+      return navigateToCourse(job);
+    }
+    job.phase = 'home';
+    addLog(job, `等待打开用户选择的课程：${candidate.title}`);
+    if (route(current) !== 'home') return goHomeToScan(job);
+    return save(job);
+  }
+
   async function handle(msg, sender) {
     if (!isSite(sender)) throw new Error('页面来源无法确认');
     let job = await read();
@@ -1159,6 +1259,7 @@
     if (msg.action === 'get') return job;
     if (resetEpoch(msg) !== resetEpoch(job)) throw new Error('TASK_CANCELLED');
     if (msg.action === 'reset') return resetTask(job, sender);
+    if (msg.action === 'course-select') return selectCourse(job, msg, sender);
     if (msg.action === 'hello') {
       if (!job || !canOperate(job) || (msg.runId && msg.runId !== job.runId) ||
         typeof msg.instanceId !== 'string' || !msg.instanceId ||
@@ -1389,7 +1490,7 @@
       const currentResetEpoch = resetEpoch(job);
       const resetHoldTabIds = job?.resetHoldTabIds || [];
       const recovered = recoveryRecords(job);
-      if (!restart && job && ['paused', 'manual'].includes(job.phase) &&
+      if (!restart && (!msg.workflow || job?.workflow === msg.workflow) && job && ['paused', 'manual'].includes(job.phase) &&
         taskTabIds(job).includes(tabId)) {
         let ownerExists = true;
         await chrome.tabs.get(job.ownerTabId).catch(() => { ownerExists = false; });
@@ -1398,7 +1499,7 @@
           job = null;
         }
       }
-      if (!restart && job && ['paused', 'manual'].includes(job.phase) &&
+      if (!restart && (!msg.workflow || job?.workflow === msg.workflow) && job && ['paused', 'manual'].includes(job.phase) &&
         taskTabIds(job).includes(tabId)) {
         const continuingManualStop = job.phase === 'manual';
         if (msg.singlePass === true) job.singlePass = true;
@@ -1516,7 +1617,9 @@
       if (!requestedAll && !resetFromHome && page === 'learn' && (!key || !msg.title)) {
         throw new Error('当前课程身份未识别');
       }
-      const allCourses = requestedAll || ['agent', 'home'].includes(page) || resetFromHome;
+      const manualWorkflow = msg.workflow === 'manual';
+      const cachedCourses = manualWorkflow ? copy(job?.candidates || []) : [];
+      const allCourses = manualWorkflow || requestedAll || ['agent', 'home'].includes(page) || resetFromHome;
       const enteringHome = page === 'agent';
       const navigateToAgent = requestedAll && !['agent', 'home'].includes(page);
       const navigateFromLearn = !requestedAll && resetFromHome && page === 'learn';
@@ -1526,6 +1629,7 @@
         startRequest: { runId: msg.runId || null, generation: msg.generation ?? null,
           instanceId: msg.instanceId, tabId },
         running: true, scope: allCourses ? 'all' : 'single',
+        ...(manualWorkflow ? { workflow: 'manual', operation: 'list', selectedIndex: null, cachedCourses } : {}),
         ...(msg.singlePass === true
           ? { singlePass: true, targetPercent: msg.targetPercent ?? 100 } : {}),
         phase: navigateToAgent ? 'go-agent' : enteringHome ? 'entry-home' : allCourses ? 'scan-home' : 'course',
@@ -1548,7 +1652,7 @@
       if (navigateToAgent) addLog(job, '开始：正在进入网站首页');
       if (enteringHome) addLog(job, '开始：正在进入全部课表');
       addLog(job, allCourses
-        ? '开始：先逐门统计，再按剩余音视频数量最少安排课程。'
+        ? manualWorkflow ? '获取课程列表：完成后等待用户选择，不进入课程。' : '开始：先逐门统计，再按剩余音视频数量最少安排课程。'
         : '开始：只处理当前课程的音视频。');
       if (navigateFromLearn) return goHomeToScan(job);
       if (navigateToAgent) return goAgentToStart(job, msg.instanceId);
@@ -1579,6 +1683,24 @@
       job.inspectIndex = 0;
       job.phase = 'home';
       addLog(job, `首页扫描完成：${job.candidates.length} 门正在上的课程`);
+      if (job.workflow === 'manual') {
+        const cached = new Map((job.cachedCourses || []).map(c => [c.key, c]));
+        job.candidates = job.candidates.map(candidate => {
+          const old = cached.get(candidate.key);
+          // The homepage exposes titles, not course IDs. Keep results as
+          // reference, but re-enter via the card to verify identity again.
+          if (!old) return candidate;
+          const next = { ...old, ...candidate, records: old.records || {},
+            directory: old.directory, total: old.total, remaining: old.remaining,
+            scannedAt: old.scannedAt, scanState: old.scannedAt ? 'stale' : 'uninspected',
+            status: old.status };
+          delete next.courseKey; delete next.learnUrl; delete next.scanDraft;
+          return next;
+        });
+        delete job.cachedCourses;
+        job.listScannedAt = Date.now();
+        return save(awaitSelection(job, '课程列表已获取，请选择一门课扫描目录。'));
+      }
       return save(job);
     }
     if (msg.action === 'open') {
@@ -1586,6 +1708,9 @@
       const candidate = job.candidates[msg.index];
       if (!candidate) throw new Error('课程选择失效，请重新扫描');
       if (!['inspect', 'play'].includes(msg.purpose)) throw new Error('课程操作类型无法确认');
+      if (job.workflow === 'manual' && (msg.index !== job.selectedIndex || msg.purpose !== job.operation)) {
+        throw new Error('未授权此课程操作，请先选择课程');
+      }
       if (job.singlePass && msg.purpose === 'play' && candidate.finalPass === true) {
         throw new Error('此课程本轮已处理，未完成项已保留提醒');
       }
@@ -1729,11 +1854,12 @@
       if (courseKey(sender) !== candidate.courseKey) throw new Error('课程身份已改变');
       const snapshot = validateDirectorySnapshot(msg.snapshot, candidate.courseKey);
       const fresh = new Map(snapshot.items.map(item => [item.key, item]));
-      if (candidate.directory?.items?.some(item => {
+      if (!(job.workflow === 'manual' && job.operation === 'inspect') && candidate.directory?.items?.some(item => {
         const found = fresh.get(item.key);
         return !found || found.title !== item.title || found.mediaType !== item.mediaType;
       })) throw new Error('课程目录缺少已保存的条目，已停止；请确认目录完整后继续');
-      candidate.directory = snapshot;
+      if (job.workflow === 'manual' && job.operation === 'inspect') candidate.scanDraft = snapshot;
+      else candidate.directory = snapshot;
       return save(job);
     }
     if (msg.action === 'course-pass') {
@@ -1833,6 +1959,8 @@
         token: msg.token, key: msg.key || '', attempt, phase: candidate.pass?.phase || 'play',
         reason: String(msg.reason || '刷新后核对网站显示状态').slice(0, 400)
       };
+      if (job.workflow === 'manual') job.expectedRefresh = { token: msg.token, tabId,
+        courseKey: candidate.courseKey, generation: job.generation, expiresAt: Date.now() + 45000 };
       addLog(job, '正在刷新课程页面，已保留当前核对阶段和重试次数');
       await save(job);
       if (!canOperate(job)) {
@@ -1849,6 +1977,7 @@
       try { await chrome.tabs.reload(tabId); }
       catch {
         requireOwner(job, msg, sender, ['course']);
+        delete job.expectedRefresh;
         candidate.lastRefresh.failed = true;
         addLog(job, '课程页面暂时无法刷新，已保留具体音视频和重试次数', 'err');
         await save(job);
@@ -2052,6 +2181,8 @@
         ...recovery, reloads: recovery.reloads + 1,
         lastReason: String(msg.reason || recovery.lastReason || '播放恢复失败').slice(0, 400)
       };
+      if (job.workflow === 'manual') job.expectedRefresh = { token: String(Date.now()), tabId,
+        courseKey: candidate.courseKey, generation: job.generation, expiresAt: Date.now() + 45000 };
       addLog(job, '正在刷新当前学习页，已保存课程和音视频断点');
       await save(job);
       if (!canOperate(job)) return job;
@@ -2069,6 +2200,7 @@
         catch { throw new Error('任务学习页已关闭，无法继续恢复'); }
         requireOwner(job, msg, sender, ['course']);
         if (!validTab(afterFailure)) throw new Error('当前课程或资源已改变，未继续恢复');
+        delete job.expectedRefresh;
         record.recovery.reloadFailed = true;
         record.recovery.lastReason = '学习页暂时无法刷新，已保留断点，稍后自动重试';
         addLog(job, record.recovery.lastReason);
@@ -2086,12 +2218,29 @@
         !Number.isInteger(result.remaining) || result.remaining < 0 || result.remaining > result.total) {
         throw new Error('课程音视频数量未确认，不能结束任务');
       }
-      const directory = candidate.directory;
+      const directory = job.workflow === 'manual' && job.operation === 'inspect' ? candidate.scanDraft || candidate.directory : candidate.directory;
       const mediaCount = directory?.items?.filter(item =>
         ['video', 'audio', 'media'].includes(item.mediaType)).length;
-      if (!directory?.items?.length || directory.courseKey !== candidate.courseKey ||
+      if (!Array.isArray(directory?.items) || (!directory.items.length && job.workflow !== 'manual') || directory.courseKey !== candidate.courseKey ||
         result.total !== mediaCount) {
         throw new Error('课程结果与已保存的完整目录不符，不能标记完成；请核对目录后继续');
+      }
+      if (job.workflow === 'manual' && job.operation === 'inspect') {
+        if (job.selectedIndex !== job.targetIndex) throw new Error('TASK_CANCELLED');
+        const oldRecords = candidate.directory?.courseKey === candidate.courseKey ? candidate.records || {} : {};
+        candidate.records = Object.fromEntries(directory.items.filter(item => ['video', 'audio', 'media'].includes(item.mediaType)).map(item => [item.key, {
+          ...oldRecords[item.key], title: item.title, confirmed: item.observedCompleted === true
+        }]));
+        candidate.directory = directory;
+        delete candidate.scanDraft;
+        candidate.total = result.total;
+        candidate.remaining = result.remaining;
+        candidate.unfinished = uniqueTexts(result.unfinished || []);
+        candidate.failures = []; candidate.unconfirmed = [];
+        candidate.status = result.remaining === 0 ? 'complete' : 'inspected';
+        candidate.scannedAt = Date.now(); candidate.scanState = 'ready';
+        delete candidate.scanError;
+        return save(awaitSelection(job, `本课扫描完成：${candidate.title}，待完成 ${result.remaining}/${result.total} 项；等待用户选择。`));
       }
       const outstanding = outstandingRecords(candidate, job.singlePass);
       const unverifiedMedia = job.singlePass && job.targetPurpose === 'play'
@@ -2134,6 +2283,11 @@
             ? `${candidate.title}：${candidate.remaining} 个音视频尚未确认完成，已保留具体提醒并继续其他课程`
             : `${candidate.title}：${candidate.remaining} 个音视频待重试，稍后自动继续`,
         candidate.remaining ? (job.singlePass ? 'err' : 'warn') : 'ok');
+      }
+      if (job.workflow === 'manual') {
+        if (job.selectedIndex !== job.targetIndex) throw new Error('TASK_CANCELLED');
+        candidate.scannedAt = Date.now();
+        return save(awaitSelection(job, `本课处理结束：${candidate.title}；未确认项已保留，请自行选择下一门课程。`));
       }
       if (job.scope === 'single') {
         if (complete || job.singlePass) return finish(job);
@@ -2188,6 +2342,16 @@
       const job = await read();
       if (!job?.singlePass || ['idle', 'resetting'].includes(job.phase) || job.targetPercent === target) return;
       job.targetPercent = target;
+      await save(job);
+    }).catch(console.error);
+  });
+
+  chrome.runtime.onInstalled?.addListener(() => {
+    serial(async () => {
+      const job = await read();
+      if (!job || job.workflow === 'manual' || ['idle', 'resetting'].includes(job.phase)) return;
+      pause(job, '助手已更新为按需模式，请获取课程列表后选择课程。');
+      job.phase = 'interrupted';
       await save(job);
     }).catch(console.error);
   });

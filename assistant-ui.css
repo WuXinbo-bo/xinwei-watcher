@@ -168,3 +168,9 @@
 #wb-study-ui .wb-filters button[aria-pressed="true"]{background:var(--wb-accent-soft);color:var(--wb-accent)}
 #wb-study-ui .wb-filters button:hover{border-color:var(--wb-border)}
 @media(pointer:coarse){#wb-study-ui .wb-summary-counts button,#wb-study-ui .wb-summary-attention,#wb-study-ui .wb-filters button,#wb-study-ui .wb-target-presets button,#wb-study-ui .wb-target-badge{min-height:44px}}
+
+/* Explicit per-course actions; browsing the row never starts a task. */
+#wb-study-ui .wb-course-choice{margin-top:10px;padding:0 10px 10px;border:1px solid var(--wb-border);border-radius:11px;background:var(--wb-bg)}
+#wb-study-ui .wb-course-choice .wb-course-row{border-bottom:0;padding:10px 0}
+#wb-study-ui .wb-course-actions{margin-top:10px;grid-template-columns:repeat(auto-fit,minmax(100px,1fr))}
+#wb-study-ui .wb-course-choice .wb-course-actions{margin-top:2px}

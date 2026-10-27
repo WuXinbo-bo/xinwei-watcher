@@ -76,7 +76,7 @@ test('站内页面跳到真实首页后，一次开始自动接到课表', async
     await agent.api.syncSharedJob();
     // A verified unchanged home can immediately advance to opening. Assert
     // durable scan evidence instead of sampling a transient home phase.
-    await waitFor(() => ['home', 'opening'].includes(c.storage.session[KEY].phase) &&
+    await waitFor(() => c.storage.session[KEY].phase === 'selection' &&
       c.storage.session[KEY].candidates[0]?.title === '待学课程');
     assert.equal(c.storage.session[KEY].logs.some(entry => entry.text === '首页扫描完成：1 门正在上的课程'), true);
     assert.equal(c.storage.session[KEY].candidates[0].title, '待学课程');

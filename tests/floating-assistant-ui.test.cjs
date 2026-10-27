@@ -84,7 +84,7 @@ test('a click expands the original panel and its close control restores the butt
     assert.equal(button.hidden, true);
     assert.equal(button.getAttribute('aria-expanded'), 'true');
     assert.equal(f.window.document.getElementById('wb-body').style.display, '');
-    assert.equal(f.window.document.getElementById('wb-start').textContent, '开始');
+    assert.equal(f.window.document.getElementById('wb-start').textContent, '获取课程列表');
 
     f.window.document.getElementById('wb-min').click();
     assert.equal(panel.hidden, true);
@@ -146,7 +146,7 @@ test('collapse and expand only change UI visibility, not running-task state', ()
 
     assert.equal(f.api.state.running, true);
     assert.equal(f.api.state.mode, 'running');
-    assert.equal(f.window.document.getElementById('wb-start').textContent, '开始');
+    assert.equal(f.window.document.getElementById('wb-start').textContent, '获取课程列表');
   } finally { close(f); }
 });
 

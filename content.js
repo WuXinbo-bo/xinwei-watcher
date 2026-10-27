@@ -687,7 +687,7 @@
     return {
       restart: Boolean(restart),
       label: state.resetPending || state.mode === 'resetting' || job?.phase === 'resetting' ? '等待重置完成' : state.startPending ? '正在开始' : job?.running ? '运行中'
-        : restart ? '重新开始' : stopped && isTaskPage(job) ? '继续' : '开始',
+        : job?.workflow === 'manual' && stopped && isTaskPage(job) ? '继续' : job?.workflow === 'manual' && job.listScannedAt ? '更新课程列表' : '获取课程列表',
       disabled: state.resetPending || state.mode === 'resetting' || job?.phase === 'resetting' ||
         state.startPending || state.pausePending || Boolean(job?.running) ||
         route === 'other'
@@ -1257,8 +1257,7 @@
     const liveCourseKey = getRoute() === 'learn' ? currentCourseKey() : '';
     const liveItems = liveCourseKey ? getMenuItems() : [];
     const liveByKey = new Map(liveItems.map(item => [getItemKey(item), item]));
-    const source = job?.candidates?.length ? job.candidates :
-      job?.phase === 'scan-home' ? state.uiDiscoveredCourses : [];
+    const source = job?.phase === 'scan-home' && job.workflow === 'manual' ? state.uiDiscoveredCourses : job?.candidates?.length ? job.candidates : job?.phase === 'scan-home' ? state.uiDiscoveredCourses : [];
     const courses = source.map(candidate => ({ ...candidate, live: candidate.courseKey === liveCourseKey }));
     // A live page outside the task must not inflate task counts or scan results.
     if (!job && liveCourseKey && !courses.some(c => c.courseKey === liveCourseKey)) {
@@ -1266,9 +1265,9 @@
         title: getDisplayedCourseTitle() || '当前课程', status: 'current', records: {}, live: true });
     }
     for (const course of courses) {
-      course.knownMediaTotal = Number.isInteger(course.total) && course.total >= 0 ? course.total :
+      course.knownMediaTotal = job?.workflow === 'manual' && !['ready'].includes(course.scanState) ? null : Number.isInteger(course.total) && course.total >= 0 ? course.total :
         Array.isArray(course.directory?.items) ? course.directory.items.filter(item => ['video', 'audio', 'media'].includes(item.mediaType)).length : null;
-      if (!course.live) continue;
+      if (!course.live || (job?.workflow === 'manual' && course.scanState !== 'ready')) continue;
       // Preserve a saved directory while the actual page is still loading.
       course.directoryStale = Boolean(course.directory && !liveItems.length);
       if (liveItems.length) {
@@ -1292,7 +1291,7 @@
     const resetPending = state.resetPending || state.mode === 'resetting' || job?.phase === 'resetting';
     const legacyTask = document.getElementById('wb-current')?.textContent || '';
     const legacyStatus = document.getElementById('wb-status')?.textContent || '';
-    const home = { status: '准备就绪', title: '从课程扫描开始', subtitle: '自动识别正在上的课程与音视频',
+    const home = { status: '准备就绪', title: '先获取课程列表', subtitle: '选中一门课后，再扫描目录或开始本课',
       caption: '', targetBadge: `${getPlaybackTarget()}% 后切换`, notice: '', tone: 'neutral',
       showStart: true, showStop: false, showResults: false, resetRetry: false, progress: null };
     if (running) {
@@ -1309,7 +1308,7 @@
         home.subtitle = '等待课程页面打开';
         if (job.openDeadline) home.caption = `等待剩余 ${Math.max(0, Math.ceil((job.openDeadline - Date.now()) / 1000))} 秒`;
       } else if (phase === 'course' && job?.targetPurpose === 'inspect') {
-        home.status = '正在统计音视频'; home.subtitle = '读取目录期间暂停媒体';
+        home.status = '正在统计音视频'; home.subtitle = '仅扫描所选课程，完成后等待你的操作';
         const completed = courses.filter(c => Number.isInteger(c.total)).length;
         if (courses.length) home.progress = { label: '已完成统计', text: `${completed} / ${courses.length} 门`, percent: completed / courses.length * 100 };
       } else if (phase === 'course') {
@@ -1340,6 +1339,10 @@
       if (job?.running && !isTaskPage()) {
         home.status = '任务在其他标签页'; home.subtitle = '请在执行任务的页面暂停或继续'; home.showStop = false;
       }
+    } else if (job?.workflow === 'manual' && job.phase === 'selection') {
+      home.status = '等待选择'; home.title = job.lastOperation === 'inspect' ? '本课目录已扫描' : job.lastOperation === 'play' ? '本课处理结束' : '课程列表已就绪';
+      home.subtitle = job.lastOperation === 'inspect' ? '查看扫描结果，或由你开始本课' : job.lastOperation === 'play' ? '本课结果已保存，请自行选择下一门' : '点击课程右侧的扫描按钮，按需读取目录';
+      home.showResults = true; home.targetBadge = '';
     } else if (job?.phase === 'finished') {
       const allConfirmed = courses.length > 0 && courses.every(c => c.status === 'complete' || c.status === 'completed');
       home.status = alerts.length ? '本轮处理结束' : allConfirmed ? '音视频已确认完成' : '本轮处理结束';
@@ -1352,6 +1355,7 @@
       home.subtitle = job.reason || '已有任务记录会在继续时核对'; home.caption = '';
       home.tone = job.phase === 'paused' ? 'neutral' : 'warning';
       if (job.reason) home.notice = job.reason;
+      if (job.workflow === 'manual' && job.operation === 'inspect') home.subtitle = '扫描未完成；上次完整结果已保留，可继续或重新扫描本课';
     }
     if (!running && !resetPending && ['manual', 'paused'].includes(state.mode) && !['finished', 'manual', 'paused', 'interrupted'].includes(job?.phase)) {
       home.status = state.mode === 'manual' ? '需要你处理' : '已暂停';
@@ -1395,8 +1399,10 @@
     });
     const overview = {
       courseProgress: courses.map((course, index) => ({ key: course.courseKey || course.key, total: totals[index], confirmed: confirmedByCourse[index] })),
-      courseConfirmed: courses.filter(course => ['complete', 'completed'].includes(course.status)).length,
-      courseTotal: scanning || (!courses.length && job?.phase !== 'finished') ? null : courses.length,
+      courseConfirmed: courses.filter(course => ['complete', 'completed'].includes(course.status) && (job?.workflow !== 'manual' || course.scanState === 'ready')).length,
+      courseUnscanned: courses.filter(course => job?.workflow === 'manual' ? course.scanState !== 'ready' : !Number.isInteger(course.total)).length,
+      coursePending: courses.filter(course => (job?.workflow !== 'manual' || course.scanState === 'ready') && Number.isInteger(course.remaining) && course.remaining > 0).length,
+      courseTotal: scanning || (!courses.length && job?.phase !== 'finished' && !job?.listScannedAt) ? null : courses.length,
       mediaConfirmed: confirmedByCourse.reduce((sum, count) => sum + count, 0),
       mediaTotal: scanning || totals.some(total => total == null) || (!courses.length && job?.phase !== 'finished')
         ? null : totals.reduce((sum, count) => sum + count, 0),
@@ -1405,7 +1411,7 @@
     };
     const hasTaskState = running || state.startPending || state.pausePending || resetPending || state.storageFailed ||
       ['paused', 'manual', 'interrupted'].includes(job?.phase) || ['paused', 'manual'].includes(state.mode) || alerts.length > 0;
-    return { job, tabId: state.tabId, courses, activeCourseKey, activeResourceKey, media, target: getPlaybackTarget(), home,
+    return { job, manualMode: !job || job.workflow === 'manual', operationPending: state.startPending || state.pausePending || state.storageFailed, tabId: state.tabId, courses, activeCourseKey, activeResourceKey, media, target: getPlaybackTarget(), home,
       alerts, resetPending, overview, hasTaskState, scanPerformance: state.scanPerformance.slice(-8), logCount: state.logEntries.length,
       targetReached: allRecords.filter(r => r.targetReached).length, confirmed: allRecords.filter(r => r.confirmed).length };
   }
@@ -1433,6 +1439,11 @@
         repositionWithinVisibleViewport();
       },
       onReset: () => resetPlugin({ confirmed: true }),
+      onCourseAction: (course, purpose) => {
+        if (purpose === 'list') return start({ refreshList: true });
+        const index = state.job?.candidates.findIndex(c => (c.courseKey || c.key) === course);
+        if (index >= 0) return start({ purpose, index, candidateKey: course });
+      },
       onLocate: (courseKey, itemKey) => {
         if (getRoute() !== 'learn' || currentCourseKey() !== courseKey) return;
         const item = getMenuItems().find(el => getItemKey(el) === itemKey);
@@ -2122,7 +2133,9 @@
       setText('wb-course-progress', '未识别');
       renderManualItems(state.manualNotice ? [state.manualNotice] : []);
     }
-    if (logSummary && videoItems.length === 0) {
+    if (logSummary && videoItems.length === 0 && items.length > 0) {
+      log('目录已读取，本课没有可处理的音视频；文档、考试和作业需自行处理', 'info');
+    } else if (logSummary && videoItems.length === 0) {
       log('当前页面暂未识别到学习资源；请等待目录加载后重新扫描', 'err');
     } else if (logSummary) {
       log(`找到 ${videoItems.length} 个音视频，待处理 ${pendingItems.length} 个`, 'ok');
@@ -2207,7 +2220,8 @@
         return {
           key: getItemKey(item), title: itemTitle(item), mediaType: getDirectoryMediaType(item),
           durationSeconds: Number.isFinite(seconds) ? seconds : null,
-          chapterTitle: getChapterTitle(getChapterRoot(item))
+          chapterTitle: getChapterTitle(getChapterRoot(item)),
+          ...(state.job?.workflow === 'manual' ? { observedCompleted: getResourceCompletion(item).confirmed === true } : {})
         };
       })
     };
@@ -2226,7 +2240,8 @@
   }
 
   function savedDirectory() {
-    const snapshot = currentCandidate()?.directory;
+    const snapshot = state.job?.workflow === 'manual' && state.job.operation === 'inspect'
+      ? currentCandidate()?.scanDraft : currentCandidate()?.directory;
     return snapshot?.version === 1 && snapshot.courseKey === currentCourseKey() &&
       Array.isArray(snapshot.items) && snapshot.items.length ? snapshot : null;
   }
@@ -2248,7 +2263,7 @@
 
   async function saveDirectoryCheckpoint(snapshot, epoch) {
     assertRunning(epoch);
-    if (!currentCandidate() || directorySignature(currentCandidate().directory) === directorySignature(snapshot)) return;
+    if (!currentCandidate() || directorySignature(state.job?.workflow === 'manual' && state.job.operation === 'inspect' ? currentCandidate().scanDraft : currentCandidate().directory) === directorySignature(snapshot)) return;
     await jobCommand('directory-checkpoint', { snapshot });
     assertRunning(epoch);
   }
@@ -2510,6 +2525,16 @@
     }
     if (state.job.phase !== 'home') return;
     const job = state.job;
+    if (job.workflow === 'manual') {
+      const selected = job.candidates[job.selectedIndex];
+      if (!selected || job.operation !== 'inspect') throw new Error('请先选择一门课程扫描');
+      const entry = await findHomeCandidate(selected, epoch);
+      await jobCommand('open', { index: job.selectedIndex, purpose: 'inspect' });
+      assertRunning(epoch);
+      await humanClick(entry, epoch);
+      setCurrentTask('等待所选课程打开');
+      return;
+    }
     const missingEntry = job.candidates.findIndex(candidate =>
       candidate.status === 'inspected' && candidate.remaining > 0 && !candidate.learnUrl);
     const inspectIndex = job.inspectIndex < job.candidates.length ? job.inspectIndex : missingEntry;
@@ -2586,7 +2611,8 @@
     if (job.targetPurpose === 'inspect') {
       setCurrentTask(`正在统计：${candidate.title}`);
       const summary = await waitForDirectory(epoch);
-      requireRecordedResources(summary.videoItems);
+      if (job.workflow !== 'manual') requireRecordedResources(summary.videoItems);
+      else await saveDirectoryCheckpoint(getDirectorySnapshot(), epoch);
       assertRunning(epoch);
       pauseMedia('inspection-finished');
       if (state.mediaLoadingHold?.epoch === epoch) state.mediaLoadingHold.leavingInspection = true;
@@ -2644,6 +2670,10 @@
           // playback errors are handled by playItemWithRecovery itself.
           const candidate = currentCandidate();
           const resource = candidate?.currentResource;
+          if (state.job?.workflow === 'manual' && state.job.operation === 'inspect') {
+            stopForManual(`扫描未完成：${error.message}；请重试本课，已保留上次完整结果`);
+            return;
+          }
           if (state.job?.phase === 'course' && candidate?.courseKey) {
             try {
               // A returned SPA can retain a broken directory component. Once
@@ -4402,7 +4432,7 @@
     };
   }
 
-  async function start() {
+  async function start(options = {}) {
     if (state.resetPending || state.mode === 'resetting' || state.job?.phase === 'resetting' ||
       state.startPending || state.pausePending || state.running || state.job?.running) return;
     const resetSequence = state.resetSequence;
@@ -4411,7 +4441,6 @@
     if (notice) { stopForManual(`页面提示“${notice}”，请按网站要求处理后继续`); return; }
     state.storageFailed = false;
     state.manualNotice = '';
-    const control = getStartControl();
     const stoppedBeforeStart = state.stopSequence;
     let cancelled = false;
     state.startPending = true;
@@ -4419,11 +4448,18 @@
     try {
       await state.playbackTargetReady;
       await state.playbackTargetWrites;
-      await jobCommand('start', {
-        title: compactText(getDisplayedCourseTitle()), scope: 'all',
-        singlePass: true, targetPercent: getPlaybackTarget(),
-        ...(control.restart ? { restart: true } : {})
-      });
+      if (options.purpose) {
+        await jobCommand('course-select', { index: options.index, candidateKey: options.candidateKey,
+          purpose: options.purpose, targetPercent: getPlaybackTarget() });
+      } else {
+        const continuing = !options.refreshList && (state.job?.workflow === 'manual' || state.job?.scope === 'single') && ['paused', 'manual'].includes(state.job.phase) && isTaskPage();
+        await jobCommand('start', {
+          title: compactText(getDisplayedCourseTitle()), scope: 'all',
+          ...(!(continuing && state.job?.scope === 'single' && state.job.workflow !== 'manual') ? { workflow: 'manual' } : {}),
+          singlePass: true, targetPercent: getPlaybackTarget(),
+          ...(!continuing ? { restart: true } : {})
+        });
+      }
       if (state.stopSequence !== stoppedBeforeStart) {
         // The user paused while this start/continue was still in flight.
         // Its late success cannot become permission to play.

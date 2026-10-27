@@ -8,10 +8,10 @@ const AGENT = `${SITE}/stu/agent`;
 const HOME = `${SITE}/myBank/courseResearch`;
 const KEY = 'xinwei-job-v3';
 
-// Public UI start, real extension modules, simulated website and browser.
+// Public on-demand UI, real extension modules, simulated website and browser.
 // Sorting uses the website's directory durations. Playback failures are
 // revisited only after the course-end refresh, before the next course opens.
-test('公开开始一次：回首页扫描、少媒体课第二次恢复、自然完成并跨课至全部确认',
+test('按需完整流程：列表后逐课扫描、显式开始本课、自然播放及故障恢复',
   { timeout: 60000 }, async () => {
     const c = coordinator();
     const id = c.addTab(`${SITE}/ordinary-page`);
@@ -34,7 +34,7 @@ test('公开开始一次：回首页扫描、少媒体课第二次恢复、自�
       c.connect(tabId)(window);
       const send = window.chrome.runtime.sendMessage;
       window.chrome.runtime.sendMessage = message => {
-        requests.push({ action: message.action, runId: message.runId, scope: message.scope });
+        requests.push({ action: message.action, runId: message.runId, scope: message.scope, index: message.index, purpose: message.purpose, candidateKey: message.candidateKey });
         return send(message);
       };
     };
@@ -128,9 +128,9 @@ test('公开开始一次：回首页扫描、少媒体课第二次恢复、自�
       });
       return f;
     };
-    const renderHome = (url = HOME) => {
-      const f = homeFixture(courses.map(course => homeCard(course.title)), { url, connect: connect(id) });
-      register(id, f);
+    const renderHome = (url = HOME, tabId = id) => {
+      const f = homeFixture(courses.map(course => homeCard(course.title)), { url, connect: connect(tabId) });
+      register(tabId, f);
       currentHome = f;
       f.window.document.querySelector('.btn-next').disabled = true;
       f.window.document.querySelectorAll('.item-bg-text p.sle').forEach((entry, index) => {
@@ -138,7 +138,7 @@ test('公开开始一次：回首页扫描、少媒体课第二次恢复、自�
           try {
             assert.equal(f.api.state.job.targetPurpose, 'inspect');
             inspection.push(courses[index].title);
-            renderCourse(c.addTab(courses[index].url, id), courses[index], 'inspect');
+            renderCourse(c.addTab(courses[index].url, tabId), courses[index], 'inspect');
           } catch (error) { errors.push(error); }
         });
       });
@@ -160,25 +160,49 @@ test('公开开始一次：回首页扫描、少媒体课第二次恢复、自�
     c.onNavigation.addListener(tab => {
       if (finishing) return;
       try {
-        assert.equal(tab.id, id);
-        close(id);
-        if (tab.url === AGENT || tab.url === HOME) renderHome(tab.url);
+        close(tab.id);
+        if (tab.url === AGENT || tab.url === HOME) renderHome(tab.url, tab.id);
         else {
           const course = courses.find(course => course.url === tab.url);
           assert.ok(course);
           const job = c.storage.session[KEY];
           assert.equal(job.candidates[job.targetIndex].learnUrl, tab.url);
           playbackVisits.push({ title: course.title, at: Date.now(), retryAt: job.candidates[job.targetIndex].retryAt });
-          renderCourse(id, course, 'play');
+          renderCourse(tab.id, course, job.operation === 'inspect' ? 'inspect' : 'play');
         }
       } catch (error) { errors.push(error); }
     });
     try {
       const first = register(id, homeFixture([], { url: `${SITE}/ordinary-page`, connect: connect(id) }));
       first.window.document.getElementById('wb-start').click();
-      await waitFor(() => c.storage.session[KEY]?.phase === 'finished' || errors.length, 55000);
+      await waitFor(() => c.storage.session[KEY]?.phase === 'selection' && !currentHome.api.state.jobPromise);
+      assert.deepEqual(inspection, []);
+      const choose = async (index, purpose) => {
+        const job = c.storage.session[KEY];
+        const owner = documents.get(job.ownerTabId);
+        await waitFor(() => !owner.api.state.jobPromise);
+        await owner.api.syncSharedJob();
+        owner.api.state.uiController.navigate('courses');
+        const card = [...owner.window.document.querySelectorAll('.wb-view[data-view=courses] [data-course]')].find(el => el.querySelector('.wb-row-title').textContent === courses[index].title);
+        assert.ok(card, 'selected course row exists');
+        card.click();
+        assert.equal(owner.window.document.querySelector('.wb-view[data-view=course] h2').textContent, courses[index].title);
+        assert.equal(owner.window.document.querySelector('.wb-view[data-view=course] [data-course-action=' + purpose + ']').dataset.actionCourse, String(index));
+        owner.window.document.querySelector('.wb-view[data-view=course] [data-course-action=' + purpose + ']').click();
+        await waitFor(() => c.storage.session[KEY].generation > job.generation);
+        await waitFor(() => c.storage.session[KEY]?.phase === 'selection' || errors.length, 45000);
+        if (errors.length) throw errors[0];
+        assert.equal(c.storage.session[KEY].running, false);
+        await new Promise(resolve => setTimeout(resolve, 30));
+      };
+      for (let index = 0; index < courses.length; index++) await choose(index, 'inspect');
+      assert.equal(endings.length, 0, 'all directory inspections leave playback idle');
+      await choose(0, 'play');
+      assert.deepEqual(endings, ['暂时故障视频']);
+      assert.equal(c.storage.session[KEY].candidates[1].remaining, 2, 'next course stays pending until explicitly selected');
+      await choose(1, 'play');
       if (errors.length) throw errors[0];
-      await waitFor(() => currentHome.api.state.job?.phase === 'finished');
+      await waitFor(() => documents.get(c.storage.session[KEY].ownerTabId).api.state.job?.phase === 'selection');
       const job = c.storage.session[KEY];
       assert.equal(requests.filter(message => message.action === 'start').length, 1);
       assert.equal(requests.find(message => message.action === 'start').scope, 'all');
@@ -189,9 +213,7 @@ test('公开开始一次：回首页扫描、少媒体课第二次恢复、自�
       assert.equal(recoveryClicks, 2);
       assert.equal(c.reloads.length, 2, 'each media course is refreshed once after its first pass');
       assert.equal(requests.filter(message => message.action === 'reload-course').length, 0);
-      assert.deepEqual(playbackVisits.map(visit => visit.title), [
-        courses[0].title, courses[0].title, courses[1].title, courses[1].title
-      ]);
+      assert.deepEqual(playbackVisits.map(visit => visit.title), [courses[0].title, courses[0].title, courses[1].title, courses[1].title]);
       assert.deepEqual(endings, ['暂时故障视频', '正常短音频', '正常长视频']);
       assert.equal(markEvidence.length, 3);
       assert.equal(markEvidence.every(record => record.ended && record.confirmed === false), true);
@@ -208,9 +230,8 @@ test('公开开始一次：回首页扫描、少媒体课第二次恢复、自�
           .filter(item => ['video', 'audio'].includes(item.kind)).map(item => item.title).sort());
         assert.equal(records.every(record => record.ended && record.confirmed && !record.progressGap), true);
       }
-      assert.equal(c.tabs.get(id).url, HOME);
-      assert.deepEqual([...c.tabs.keys()], [id]);
-      assert.match(currentHome.window.document.getElementById('wb-current').textContent, /文档、考试、作业/);
+      assert.equal(c.tabs.get(job.ownerTabId).url, courses[1].url);
+      assert.equal(job.phase, 'selection');
     } catch (error) {
       console.error(JSON.stringify({ job: c.storage.session[KEY], inspection, playbackVisits,
         endings, recoveryClicks, errors: errors.map(e => e.message), requests: requests.slice(-12) }));

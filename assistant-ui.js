@@ -25,7 +25,7 @@
   const note = text => `<p class="wb-note">${esc(text)}</p>`;
   const kv = (label, value) => `<div class="kv"><span>${esc(label)}</span><span>${esc(value)}</span></div>`;
 
-  function create({ getModel, imageUrl, promotion = {}, onReset, onLocate, onView, getShell, onRestoreShell }) {
+  function create({ getModel, imageUrl, promotion = {}, onReset, onLocate, onCourseAction, onView, getShell, onRestoreShell }) {
     const box = document.createElement('section');
     box.id = 'wb-study-ui';
     box.setAttribute('aria-label', '芯位教育助手');
@@ -91,8 +91,8 @@
             <p class="wb-setting-feedback" id="wb-setting-feedback" role="status" aria-live="polite"></p>
           </section>
           <section class="wb-setting-card" aria-labelledby="wb-setting-rules-title">
-            <div class="wb-setting-card-head"><div><h3 id="wb-setting-rules-title">任务规则</h3><p>当前任务按以下规则运行。</p></div></div>
-            <div class="wb-setting-rule"><span>处理范围</span><strong>视频和音频</strong></div>
+            <div class="wb-setting-card-head"><div><h3 id="wb-setting-rules-title">任务规则</h3><p>按需扫描，一次只处理一门课。</p></div></div>
+            <div class="wb-setting-rule"><span>处理范围</span><strong>所选课程的音视频</strong></div>
             <div class="wb-setting-rule"><span>异常恢复</span><strong>恢复时使用 100%</strong></div>
             <div class="wb-setting-rule"><span>完成依据</span><strong>平台页面确认</strong></div>
           </section>
@@ -186,8 +186,8 @@
     const text = (id, value) => { const el = $(id); const valueText = String(value ?? ''); if (el.textContent !== valueText) el.textContent = valueText; };
     const title = (label, parent = 'home', parentLabel = '任务首页') => `<button class="wb-link wb-back" type="button" data-ui-view="${parent}">${svg('back')}${parentLabel}</button><h2 class="wb-title">${esc(label)}</h2>`;
     const courseKey = course => course.courseKey || course.key;
-    const findCourse = () => model.courses.find(c => courseKey(c) === selectedCourse);
-    const isCourseComplete = course => ['complete', 'completed'].includes(course.status);
+    const findCourse = () => model.courses.find(c => courseKey(c) === selectedCourse || c.key === selectedCourse);
+    const isCourseComplete = course => ['complete', 'completed'].includes(course.status) && (!model.manualMode || course.scanState === 'ready');
     const progressData = course => model.overview.courseProgress.find(item => item.key === courseKey(course));
     const remaining = data => data.total == null ? null : Math.max(0, data.total - data.confirmed);
     function progressBar(label, confirmed, total) {
@@ -196,6 +196,13 @@
       return `<div class="wb-completion-line"><div class="wb-track" role="progressbar" aria-label="${esc(label)}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${percent}" aria-valuetext="${confirmed} / ${total}，${percent}%"><div class="wb-fill" style="width:${percent}%" data-complete="${confirmed === total}"></div></div><span class="wb-percent">${percent}%</span></div>`;
     }
     function taskSummary() {
+      if (model.manualMode) {
+        const o = model.overview, scanned = model.courses.length - o.courseUnscanned;
+        return '<div class="wb-summary-heading"><button type="button" class="wb-link" data-course-filter="all">课程总览 <span aria-hidden="true">›</span></button><span class="wb-summary-total">' + (o.courseTotal == null ? '正在获取' : '共 ' + o.courseTotal + ' 门') + '</span></div>' +
+          '<p class="wb-progress-meta">已扫描 ' + scanned + ' 门 · 尚未扫描 ' + o.courseUnscanned + ' 门</p>' +
+          '<div class="wb-summary-counts"><button type="button" data-course-filter="complete">已确认 <strong>' + o.courseConfirmed + '</strong> 门</button><button type="button" data-course-filter="pending">已知待完成 <strong>' + o.coursePending + '</strong> 门</button></div>' +
+          (o.courseTotal ? progressBar('课程目录已扫描比例', scanned, o.courseTotal) : '');
+      }
       const o = model.overview, pending = o.courseTotal == null ? null : Math.max(0, o.courseTotal - o.courseConfirmed);
       const scanning = ['go-agent', 'entry-home', 'scan-home'].includes(model.job?.phase);
       return `<div class="wb-summary-heading"><button type="button" class="wb-link" data-course-filter="all">课程总览 <span aria-hidden="true">›</span></button><span class="wb-summary-total">${o.courseTotal == null ? scanning ? '扫描中' : '待扫描' : `共 ${o.courseTotal} 门`}</span></div>` +
@@ -220,7 +227,7 @@
       if (record?.targetReached) return '达到播放目标';
       if (record?.ended) return '自然结束 · 待确认';
       if (record?.started || record?.attempted) return '处理中断';
-      return course.live ? '未开始' : '暂无播放记录';
+      return model.manualMode && course.scanState === 'ready' && isMedia(item) ? '待完成' : course.live ? '未开始' : '暂无播放记录';
     }
     function courseCount(course) {
       if (!Array.isArray(course.directory?.items)) return Number.isInteger(course.total) ? `音视频 ${course.total} 项` : '音视频数量待统计';
@@ -229,29 +236,55 @@
       return Object.entries(counts).filter(([, n]) => n).map(([kind, n]) => `${types[kind]} ${n}`).join(' · ') || '没有可处理的音视频';
     }
     function courseLabel(course) {
+      if (model.manualMode) {
+        if (model.job?.running && model.job.selectedIndex === model.courses.indexOf(course)) return model.job.operation === 'inspect' ? '正在扫描' : '正在学习';
+        if (course.scanState === 'error') return '扫描未完成';
+        if (course.scanState === 'paused') return '扫描已暂停';
+        if (course.scanState !== 'ready') return course.scannedAt ? '待重新核对' : '尚未扫描';
+        return isCourseComplete(course) ? '音视频已确认' : '待完成 ' + (course.remaining ?? '—') + ' 项';
+      }
       if (model.activeCourseKey === courseKey(course) && model.job?.running) return model.job.targetPurpose === 'inspect' ? '正在统计' : '正在处理';
       return courseStates[course.status] || (course.live ? '当前课程' : '待统计');
     }
+    function courseActions(c) {
+      if (!model.manualMode) return '';
+      const disabled = model.job?.running || model.operationPending || model.resetPending || !model.job ? ' disabled' : '';
+      const index = model.courses.indexOf(c);
+      const scan = '<button class="btn" type="button" data-course-action="inspect" data-action-course="' + index + '"' + disabled + '>' + (c.scannedAt ? '重新扫描' : '扫描目录') + '</button>';
+      const play = c.scanState === 'ready' && c.scannedAt && c.total > 0 && c.remaining > 0
+        ? '<button class="btn primary" type="button" data-course-action="play" data-action-course="' + index + '"' + disabled + '>开始本课</button>' : '';
+      return '<div class="wb-actions wb-actions-inline wb-course-actions">' + scan + play + '</div>';
+    }
     function coursesPage() {
-      const inspected = model.courses.filter(c => Array.isArray(c.directory?.items) || Number.isInteger(c.total)).length;
-      const filters = { all: '全部', complete: '已完成', pending: '待完成', attention: '待处理' };
+      const inspected = model.courses.filter(c => model.manualMode ? c.scanState === 'ready' : Array.isArray(c.directory?.items) || Number.isInteger(c.total)).length;
+      const filters = model.manualMode ? { all: '全部', unscanned: '尚未扫描', pending: '待完成', complete: '已确认' } : { all: '全部', complete: '已完成', pending: '待完成', attention: '待处理' };
       const visible = model.courses.map((c, index) => ({c, index})).filter(({c}) =>
-        courseFilter === 'all' || (courseFilter === 'complete' ? isCourseComplete(c) : courseFilter === 'pending' ? !isCourseComplete(c) : c.status === 'manual'));
-      return title('全部课程') + `<p class="wb-caption">${model.courses.length ? `${model.courses.length} 门课程 · 已统计 ${inspected} 门` : '尚未建立课程列表'}</p>` +
-        (model.courses.length ? `<div class="wb-filters" role="group" aria-label="筛选课程">${Object.entries(filters).map(([key, label]) => `<button type="button" data-course-filter="${key}" aria-pressed="${courseFilter === key}">${label}</button>`).join('')}</div>` : '') +
-        (model.courses.length ? '<p class="wb-caption">仅查看目录，不会切换播放。</p>' : '') +
-        (model.courses.length ? visible.map(({c, index}) => `<button class="wb-course-row" type="button" data-course="${index}"><span class="wb-row-main"><span class="wb-row-title">${esc(c.title)}</span><span class="wb-row-meta">${esc(courseCount(c))}</span></span><span class="wb-row-status" data-active="${model.activeCourseKey === courseKey(c)}">${esc(courseLabel(c))} ›</span></button>`).join('') || note('暂无符合此分类的课程。') :
-          note(model.job?.phase === 'finished' ? '没有发现可处理的课程。请在网站核对课程状态。' : '开始任务后将扫描正在上的课程。扫描期间，已发现的课程会逐步出现在这里。'));
+        courseFilter === 'all' || (courseFilter === 'complete' ? isCourseComplete(c) : courseFilter === 'unscanned' ? c.scanState !== 'ready' : courseFilter === 'pending' ? model.manualMode ? c.scanState === 'ready' && c.remaining > 0 : !isCourseComplete(c) : c.status === 'manual'));
+      let html = title('全部课程') + '<p class="wb-caption">' + (model.courses.length ? model.courses.length + ' 门课程 · 已统计 ' + inspected + ' 门' : '尚未建立课程列表') + '</p>';
+      if (model.courses.length) {
+        html += '<div class="wb-filters" role="group" aria-label="筛选课程">' + Object.entries(filters).map(([key, label]) => '<button type="button" data-course-filter="' + key + '" aria-pressed="' + (courseFilter === key) + '">' + label + '</button>').join('') + '</div>';
+        html += '<p class="wb-caption">仅查看目录，不会切换播放。</p>';
+      }
+      if (model.manualMode) html += '<p class="wb-caption">选择扫描或开始本课；结束后等待你选择，不自动处理其他课程。</p>' + (!model.job?.running ? '<button class="wb-link" type="button" data-refresh-list ' + (model.operationPending || model.resetPending ? 'disabled' : '') + '>更新课程列表</button>' : '');
+      if (!model.courses.length) return html + note(model.manualMode ? '点击获取课程列表，再选择一门课扫描目录。' : '开始任务后将扫描正在上的课程。扫描期间，已发现的课程会逐步出现在这里。');
+      return html + (visible.map(({c, index}) => {
+        const row = '<button class="wb-course-row" type="button" data-course="' + index + '"><span class="wb-row-main"><span class="wb-row-title">' + esc(c.title) + '</span><span class="wb-row-meta">' + esc(courseCount(c)) + '</span></span><span class="wb-row-status" data-active="' + (model.activeCourseKey === courseKey(c)) + '">' + esc(courseLabel(c)) + ' ›</span></button>';
+        return model.manualMode ? '<div class="wb-course-choice">' + row + courseActions(c) + '</div>' : row;
+      }).join('') || note('暂无符合此分类的课程。'));
     }
     function coursePage() {
       const c = findCourse();
       if (!c) return title('课程已更新', 'courses', '全部课程') + note('这门课已不在当前任务中。请返回课程列表查看。');
       const items = c.directory?.items;
       let html = title(c.title, 'courses', '全部课程') + `<p class="wb-caption">${esc(courseCount(c))}</p><div class="wb-course-progress">${learningProgress(c)}</div>`;
+      html += courseActions(c);
+      if (model.manualMode && c.scannedAt) html += '<p class="wb-caption">上次完整扫描：' + esc(new Date(c.scannedAt).toLocaleString('zh-CN', { hour12: false })) + '</p>';
+      if (model.manualMode && c.scanState !== 'ready' && c.scannedAt) html += note('当前为上次完整结果，请重新扫描核对最新状态。');
+      if (model.manualMode && c.scanError) html += note(c.scanError);
       if (!items) {
         if (model.job?.running && model.activeCourseKey === courseKey(c)) return html + note('正在读取课程目录，请稍候。已识别的条目会在目录就绪后显示。');
         if (c.failures?.length || c.status === 'manual') return html + note(`目录尚未读取完成，请检查网站页面。${(c.failures || []).join('；')}`);
-        return html + note('尚未读取这门课的目录。统计完成后会展示音视频明细。');
+        return html + note(model.manualMode ? '尚未读取这门课的目录。点击“扫描目录”后展示本课待完成内容，不会开始学习。' : '尚未读取这门课的目录。统计完成后会展示音视频明细。');
       }
       if (!c.live || c.directoryStale) html += note('当前显示上次读取的目录，平台状态可能已变化。');
       if (!items.length) return html + note('已读取目录，本课没有可处理的音视频。文档、考试和作业需自行处理。');
@@ -294,16 +327,16 @@
     function helpPage() {
       return `<button class="wb-link wb-back" type="button" data-help-return>${svg('back')}返回原面板</button><h2 class="wb-title">使用指南</h2>
         <p class="wb-caption">先核对课程，再开始学习。查看指南不会暂停或切换任务。</p>
-        <ol class="wb-guide-steps"><li><strong>登录并开始</strong><p>登录芯位蜜线，点击悬浮球打开助手，再点击“开始”。助手会进入课表，扫描全部正在上的课程，逐门统计后安排学习。</p></li>
-        <li><strong>查看课程与目录</strong><p>点击课程总览查看全部课程；点击本课学习项查看章节、音视频和详情。未扫描完成时显示“待统计”，浏览目录不会切换播放。</p></li>
+        <ol class="wb-guide-steps"><li><strong>获取课程列表</strong><p>登录芯位蜜线，打开助手并点击“获取课程列表”。助手只读取课表，完成后等待你选择，不会逐门进入课程。</p></li>
+        <li><strong>按需扫描本课</strong><p>点击课程总览，选择一门课的“扫描目录”。仅核对本课章节和音视频；完成后查看待完成项。点击课程名称只是查看已有结果，不会扫描或播放。</p></li>
         <li><strong>设置播放目标</strong><p>点击齿轮设置 80%–100% 目标。有效整数立即保存，当前正常播放在下一次检查采用新值；异常重试保持 100%。达到目标与平台确认分别记录。</p></li>
-        <li><strong>暂停或继续</strong><p>需要停下时点击“暂停”。收起面板只隐藏界面，不会暂停任务。任务暂停后，按页面提示继续。</p></li></ol>
+        <li><strong>开始本课与暂停</strong><p>扫描完成后点击“开始本课”，只处理本课音视频，结束后停止。不会自动切到下一门课。暂停后由你继续；收起面板只隐藏界面。</p></li></ol>
         <details class="wb-more" data-ui-disclosure="guide-wait"><summary>扫描等待或数量不一致</summary><p class="wb-caption">保持课表和学习页打开，等待章节加载。新增资源、目录变化或网络延迟时会重新核对；请先核对网站目录，不要反复点击开始。可在“设置 → 任务概览与日志”查看原因。</p></details>
         <details class="wb-more" data-ui-disclosure="guide-restart"><summary>更新、中断与重置</summary><p class="wb-caption">更新后重载扩展并刷新课程页。扩展重启后如显示任务已中断，请回到首页点击开始，重新核对课程。重置会停止任务并清除本地断点、统计和日志，不会删除网站进度。</p></details>
         <details class="wb-more" data-ui-disclosure="guide-limits"><summary>哪些内容需要自己处理</summary><p class="wb-caption">登录失效、验证码、题目和平台限制需要人工处理。当前按正在上的课程扫描，不提供仅考核课程筛选或自定义节数。文档、作业和考试仍需自行处理；最终完成状态以平台为准。</p></details>`;
     }
     function aboutPage() {
-      let html = title('关于与服务', 'settings', '设置') + '<p class="wb-caption">Xinwei Course Watcher · 1.1.0 候选版本</p>' + note('面向 Beeline AI 学习页面。保留原作者署名与 Apache License 2.0。');
+      let html = title('关于与服务', 'settings', '设置') + '<p class="wb-caption">Xinwei Course Watcher · 1.2.0 按需版本</p>' + note('面向 Beeline AI 学习页面。保留原作者署名与 Apache License 2.0。');
       const data = sponsorData();
       if (data) html += `<p class="wb-caption">第三方商业服务 · 非平台或原作者官方服务</p><a class="wb-external" href="${esc(data.url)}" target="_blank" rel="noopener noreferrer sponsored">${esc(data.brand)} · ${esc(data.items.join(' / '))} ↗</a>`;
       return html;
@@ -408,7 +441,7 @@
             [...box.querySelectorAll('.wb-view')].some(page => page.dataset.view === restore.helpReturn)) helpReturn = restore.helpReturn;
           selectedCourse = typeof restore.selectedCourse === 'string' ? restore.selectedCourse : null;
           selectedResource = typeof restore.selectedResource === 'string' ? restore.selectedResource : null;
-          courseFilter = ['all', 'complete', 'pending', 'attention'].includes(restore.courseFilter) ? restore.courseFilter : 'all';
+          courseFilter = ['all', 'complete', 'pending', 'attention', 'unscanned'].includes(restore.courseFilter) ? restore.courseFilter : 'all';
           for (const entry of Array.isArray(restore.scroll) ? restore.scroll.slice(-300) : []) {
             if (Array.isArray(entry) && typeof entry[0] === 'string' && Number.isFinite(entry[1])) scroll.set(entry[0], Math.max(0, entry[1]));
           }
@@ -468,7 +501,7 @@
       text('wb-ui-task-label', model.home.status);
       $('wb-ui-log-empty').hidden = model.logCount > 0;
       $('wb-log').hidden = model.logCount === 0;
-      const stats = kv('任务范围', model.job?.scope === 'single' ? '当前课程' : '全部正在上的课程') + kv('本轮达到播放目标', model.targetReached) + kv('任务中已确认记录', model.confirmed);
+      const stats = kv('任务范围', model.manualMode ? '用户选择的单门课程' : model.job?.scope === 'single' ? '当前课程' : '全部正在上的课程') + kv('本轮达到播放目标', model.targetReached) + kv('任务中已确认记录', model.confirmed);
       if ($('wb-ui-statistics').innerHTML !== stats) $('wb-ui-statistics').innerHTML = stats;
       const stages = { 'home-overview': '课表总览', 'course-directory': '本课目录', 'completion-checkpoint': '完成状态核对' };
       const timings = (model.scanPerformance || []).map(item => kv(stages[item.stage] || '扫描', `${(item.durationMs / 1000).toFixed(2)} 秒${item.ok ? '' : ' · 未完成'}`)).join('');
@@ -494,6 +527,15 @@
       const control = event.target.closest('button');
       if (!control || control.disabled) return;
       if (control.hasAttribute('data-help-return')) { navigate(helpReturn); $('wb-help').focus({ preventScroll: true }); return; }
+      if (control.hasAttribute('data-course-action')) {
+        const c = model.courses[Number(control.dataset.actionCourse)];
+        if (c && !model.job?.running && !model.operationPending) {
+          navigate('course', { course: courseKey(c) });
+          onCourseAction?.(courseKey(c), control.dataset.courseAction);
+        }
+        return;
+      }
+      if (control.hasAttribute('data-refresh-list')) { onCourseAction?.(null, 'list'); return; }
       if (control.hasAttribute('data-course-filter')) navigate('courses', { filter: control.dataset.courseFilter });
       else if (control.id === 'wb-ui-directory' || control.hasAttribute('data-current-directory')) {
         const c = model.courses.find(c => courseKey(c) === model.activeCourseKey);

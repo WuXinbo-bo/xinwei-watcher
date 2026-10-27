@@ -73,17 +73,18 @@ for (const collapsed of [false, true]) {
       f.window.document.getElementById('wb-start').click();
       await waitFor(() => entryClicks === 1);
       await f.api.syncSharedJob();
-      await waitFor(() => courseClicks === 1, 5000);
+      await waitFor(() => c.storage.session[KEY]?.phase === 'selection', 5000);
+      assert.equal(courseClicks, 0);
       const job = c.storage.session[KEY];
       assert.equal(persistedBeforeClick, true);
       assert.equal(entryClicks, 1);
       assert.equal(expandClicks, collapsed ? 1 : 0);
       assert.equal(job.scope, 'all');
-      assert.equal(job.phase, 'opening');
+      assert.equal(job.phase, 'selection');
       assert.equal(job.homeTabId, id);
       assert.equal(job.candidates.length, 1);
       assert.equal(job.candidates[0].title, '当前课程');
-      assert.equal(job.targetPurpose, 'inspect');
+      assert.equal(job.targetPurpose || '', '');
       assert.equal(c.navigation.some(n => n.url), false);
     } finally { f.dom.window.close(); }
   });
