@@ -530,6 +530,34 @@ test('Beeline 章节统计识别 section-content 条目并忽略隐藏的响应�
   } finally { f.dom.window.close(); }
 });
 
+test('shortCourse 使用 el-menu-component 根节点时仍识别视频目录', async () => {
+  const f = fixture([], {
+    url: 'https://www.beeline-ai.com/student/#/shortCourse/learn/courseWare/course-1/video/resource-1?classId=class-1'
+  });
+  try {
+    const doc = f.window.document;
+    const oldRoot = doc.querySelector('.sub-menu-area');
+    const root = doc.createElement('div');
+    root.className = 'el-menu-component';
+    root.innerHTML = `<ul class="el-menu">
+      <li class="el-sub-menu is-opened" aria-expanded="true">
+        <div class="el-sub-menu__title">第一章导论</div>
+        <ul class="el-menu el-menu--inline">
+          <li class="el-menu-item-group"><div class="el-menu-item-group__title">
+            <div class="section-area"><div class="section-content"><span class="section-title">理性思维</span></div></div>
+          </div><ul>
+            <li class="el-menu-item" role="menuitem"><div class="lecture-content"><i class="video-icon"></i><span class="lecture-title">理性思维与非理性思维</span></div><span class="lecture-status"><i class="inProgress-icon"></i></span></li>
+          </ul></li>
+        </ul>
+      </li></ul>`;
+    oldRoot.replaceWith(root);
+    const result = f.api.refreshDirectories({ logSummary: false });
+    assert.equal(result.videoItems.length, 1);
+    assert.equal(result.pendingItems.length, 1);
+    assert.match(result.videoItems[0].textContent, /理性思维与非理性思维/);
+  } finally { f.dom.window.close(); }
+});
+
 test('同一章节的同名媒体不会被去重丢失', () => {
   const f = fixture([mediaItem('同名视频'), mediaItem('同名视频')]);
   try {

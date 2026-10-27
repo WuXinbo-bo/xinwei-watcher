@@ -214,6 +214,14 @@
       '.chapter-title',
       '.catalog-title'
     ],
+    // The current shortCourse renderer wraps the Element-Plus menu in this
+    // component.  It is present on both the legacy and the new short-course
+    // learning pages, but is not itself an `el-menu` element.
+    shortCourseRoots: [
+      '.el-menu-component',
+      '[class~="el-menu-component"]',
+      '[class*="el-menu-component"]'
+    ],
     progressTexts: [
       '.progress-text',
       '.study-progress',
@@ -1847,6 +1855,12 @@
     if (!isLeafCourseItem(el)) return false;
     if (el.querySelector('i.text-icon')) return false;
     if (el.querySelector('i.video-icon, i.audio-icon, i.music-icon')) return true;
+    // shortCourse rows can omit duration and status icons while the platform
+    // is still loading their chapter status.  Their media type is explicit in
+    // the row icon, so keep them actionable during that transient state.
+    if (getRouteInfo?.().family === 'shortCourse' && el.querySelector(
+      '.lecture-icon-type .video-icon, .lecture-icon-type .audio-icon, ' +
+      '.section-icon-type .video-icon, .section-icon-type .audio-icon')) return true;
     if (!looksLikePlayableMedia(el)) return false;
     const host = getStatusHost(el);
     return hasMediaDuration(el) || SELECTORS.videoIcons.some(selector => host.querySelector(selector));
@@ -1968,6 +1982,20 @@
   }
 
   function findDirectoryRoot() {
+    // shortCourse uses a dedicated wrapper instead of the old vertical-menu
+    // class. Prefer its visible instance so hidden responsive copies are not
+    // expanded or counted.
+    const shortRoots = [...document.querySelectorAll(SELECTORS.shortCourseRoots.join(', '))];
+    const visibleShortRoots = shortRoots.filter(isVisibleElement);
+    if (visibleShortRoots.length) {
+      return visibleShortRoots.sort((a, b) => {
+        const count = root => root.querySelectorAll(
+          'li.el-menu-item, .section-content, .lecture-content, .section-area'
+        ).length;
+        return count(b) - count(a);
+      })[0];
+    }
+    if (shortRoots.length) return shortRoots[0];
     const menuRoots = [...document.querySelectorAll('ul.el-menu.el-menu--vertical.el-menu-class')];
     const visibleMenuRoots = menuRoots.filter(isVisibleElement);
     if (visibleMenuRoots.length) {
@@ -1987,7 +2015,8 @@
       '[class*="directory"]',
       '[class*="catalog"]',
       '[class*="course-chapter"]',
-      '[class*="courseware"]'
+      '[class*="courseware"]',
+      ...SELECTORS.shortCourseRoots
     ].join(', ');
     const roots = [...document.querySelectorAll(selectors)];
     return roots.find(isVisibleElement) || roots[0] || null;
