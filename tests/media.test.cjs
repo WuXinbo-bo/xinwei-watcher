@@ -558,6 +558,30 @@ test('shortCourse 使用 el-menu-component 根节点时仍识别视频目录', a
   } finally { f.dom.window.close(); }
 });
 
+test('shortCourse 使用 short-distance-elMenu 与 lecture-class 时识别并读取进度完成', async () => {
+  const f = fixture([], {
+    url: 'https://www.beeline-ai.com/student/#/shortCourse/learn/courseWare/course-1/video/resource-1?classId=class-1'
+  });
+  try {
+    const doc = f.window.document;
+    const oldRoot = doc.querySelector('.sub-menu-area');
+    const root = doc.createElement('div');
+    root.className = 'short-distance-elMenu';
+    root.innerHTML = `<ul class="el-menu-class">
+      <li class="el-sub-menu chapter-class" aria-expanded="true"><div class="el-sub-menu__title">第一章导论</div><ul>
+        <li class="el-sub-menu section-class" aria-expanded="true"><div class="el-sub-menu__title"><span class="section-title">理性思维</span></div><ul>
+          <li class="el-menu-item lecture-class" role="menuitem"><div class="lecture-content"><span class="lecture-title">已完成视频</span></div><span class="lecture-status"><div class="el-progress-bar__inner" style="width: 100%;"></div></span></li>
+          <li class="el-menu-item lecture-class" role="menuitem"><div class="lecture-content"><span class="lecture-title">待完成视频</span></div><span class="lecture-status"><i class="unStart-icon"></i></span></li>
+        </ul></li>
+      </ul></li></ul>`;
+    oldRoot.replaceWith(root);
+    const result = f.api.refreshDirectories({ logSummary: false });
+    assert.equal(result.videoItems.length, 2);
+    assert.equal(result.pendingItems.length, 1);
+    assert.equal(f.api.getDirectorySnapshot(result.videoItems).items.length, 2);
+  } finally { f.dom.window.close(); }
+});
+
 test('同一章节的同名媒体不会被去重丢失', () => {
   const f = fixture([mediaItem('同名视频'), mediaItem('同名视频')]);
   try {

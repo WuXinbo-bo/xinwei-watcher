@@ -141,6 +141,8 @@
 
   const SELECTORS = {
     menuItems: [
+      '.lecture-class',
+      'li.lecture-class',
       '.section-item',
       '[class*="section-item"]',
       '[class*="catalog-item"]',
@@ -195,6 +197,9 @@
       '.done-icon'
     ],
     chapterRoots: [
+      '.chapter-class',
+      '.section-class',
+      '.sub-menu-area',
       'li.el-sub-menu',
       'li.el-menu-item-group',
       '.el-menu-item-group',
@@ -218,6 +223,7 @@
     // component.  It is present on both the legacy and the new short-course
     // learning pages, but is not itself an `el-menu` element.
     shortCourseRoots: [
+      '.short-distance-elMenu',
       '.el-menu-component',
       '[class~="el-menu-component"]',
       '[class*="el-menu-component"]'
@@ -927,7 +933,14 @@
   function isPageCompletedItem(el) {
     if (!isLeafCourseItem(el)) return false;
     const host = getStatusHost(el);
-    return SELECTORS.doneIcons.some(selector => host.querySelector(selector));
+    if (SELECTORS.doneIcons.some(selector => host.querySelector(selector))) return true;
+    if (getRouteInfo?.().routeFamily !== 'shortCourse') return false;
+    // shortCourse uses a progress bar for leaf completion instead of a done icon.
+    const progress = host.querySelector(
+      '.lecture-status .el-progress-bar__inner, .lecture-status [class*="progress-bar__inner"]'
+    );
+    const width = progress?.style?.width?.match(/([0-9]+(?:\.[0-9]+)?)%/);
+    return Boolean(width && Number(width[1]) >= 95);
   }
 
   const RESOURCE_PROGRESS_SELECTORS = [
@@ -1833,6 +1846,7 @@
     return el.closest([
       'li.el-menu-item[role="menuitem"]',
       'li.el-menu-item',
+      '.lecture-class',
       '.section-item',
       '[class*="section-item"]',
       '[class*="catalog-item"]',
@@ -1855,10 +1869,11 @@
     if (!isLeafCourseItem(el)) return false;
     if (el.querySelector('i.text-icon')) return false;
     if (el.querySelector('i.video-icon, i.audio-icon, i.music-icon')) return true;
+    if (getRouteInfo?.().routeFamily === 'shortCourse' && el.matches('.lecture-class, li.lecture-class')) return true;
     // shortCourse rows can omit duration and status icons while the platform
     // is still loading their chapter status.  Their media type is explicit in
     // the row icon, so keep them actionable during that transient state.
-    if (getRouteInfo?.().family === 'shortCourse' && el.querySelector(
+    if (getRouteInfo?.().routeFamily === 'shortCourse' && el.querySelector(
       '.lecture-icon-type .video-icon, .lecture-icon-type .audio-icon, ' +
       '.section-icon-type .video-icon, .section-icon-type .audio-icon')) return true;
     if (!looksLikePlayableMedia(el)) return false;
@@ -1899,7 +1914,7 @@
       }
     }
     const root = getChapterRoot(el) || findDirectoryRoot();
-    const index = root ? [...root.querySelectorAll('li.el-menu-item')].indexOf(el) : -1;
+    const index = root ? [...root.querySelectorAll('li.el-menu-item, .lecture-class')].indexOf(el) : -1;
     return `${path.join('/')}__${title}#${index}`;
   }
 
@@ -1917,8 +1932,9 @@
 
   function isLeafCourseItem(el) {
     if (!el) return false;
-    if (el.matches('li.el-menu-item[role="menuitem"], li.el-menu-item')) return true;
+    if (el.matches('li.el-menu-item[role="menuitem"], li.el-menu-item, .lecture-class, li.lecture-class')) return true;
     return !el.querySelector([
+      '.lecture-class',
       '.section-item',
       '[class*="section-item"]',
       '.section-content',
@@ -1941,7 +1957,15 @@
     if (!el) return document.createElement('div');
     const sectionArea = el.closest('.section-area');
     if (sectionArea?.querySelector('.section-content')) return sectionArea;
-    return el.closest('.section-item, .section-content, li.el-menu-item, .el-menu-item, .courseware-list-item, .section-area') || el.parentElement || el;
+    return el.closest('.lecture-class, .section-item, .section-content, li.el-menu-item, .el-menu-item, .courseware-list-item, .section-area') || el.parentElement || el;
+  }
+
+  function findDirectoryToggle() {
+    const candidates = document.querySelectorAll(
+      '.sidebar-item, .courseWare-tab-header, .tab, [role="tab"], button'
+    );
+    return [...candidates].find(el => !el.closest('#wb-study-ui') &&
+      /^(目录|课程章节|章节)$/.test(compactText(el.innerText || el.textContent))) || null;
   }
 
   function hasMediaDuration(el) {
@@ -3133,8 +3157,7 @@
 
   async function collectDirectory(epoch) {
     observeDiagnostic('directory', { stage: 'before', media: observeCurrentMedia() });
-    const sideButton = [...document.querySelectorAll('.sidebar-item')]
-      .find(el => compactText(el.textContent) === '目录');
+    const sideButton = findDirectoryToggle();
     if (sideButton && !findDirectoryRoot()?.getClientRects().length) {
       await humanClick(sideButton, epoch);
     }
@@ -3212,8 +3235,7 @@
   }
 
   async function openMediaItem(item, epoch, forceOpen = false) {
-    const sideButton = [...document.querySelectorAll('.sidebar-item')]
-      .find(el => compactText(el.innerText || el.textContent) === '目录');
+    const sideButton = findDirectoryToggle();
     const root = findDirectoryRoot();
     if (sideButton && root && !root.getClientRects().length) {
       await humanClick(sideButton, epoch);
