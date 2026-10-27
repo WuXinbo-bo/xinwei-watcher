@@ -32,14 +32,14 @@
     box.setAttribute('aria-label', '芯位教育助手');
     box.innerHTML = `
       <header class="hd" id="wb-drag">
-        <div class="wb-brand"><img class="wb-brand-image" alt="" draggable="false"><span>芯位教育助手</span></div>
+        <div class="wb-brand"><span>芯位教育助手</span></div>
         <a class="wb-icon" id="wb-github" href="https://github.com/WuXinbo-bo/xinwei-watcher" target="_blank" rel="noopener noreferrer" aria-label="GitHub 项目仓库（新标签页）" title="GitHub 项目仓库">${svg('github')}</a>
         <button class="wb-icon" id="wb-help" type="button" data-ui-view="help" aria-label="使用指南" title="使用指南">${svg('help')}</button>
         <button class="wb-icon" type="button" data-ui-view="settings" aria-label="设置" title="设置">${svg('settings')}</button>
         <button class="wb-icon" id="wb-min" type="button" aria-label="收起芯位教育助手" title="收起面板">${svg('collapse')}</button>
       </header>
       <aside class="wb-sponsor" id="wb-sponsor" aria-label="项目赞助" hidden>
-        <a id="wb-sponsor-link" target="_blank" rel="noopener noreferrer sponsored"><span class="wb-sponsor-mark" aria-hidden="true">${svg('sponsor')}</span><span class="wb-sponsor-copy"><span class="wb-sponsor-label">项目赞助</span><span id="wb-sponsor-message"></span></span><span class="wb-sponsor-arrow" aria-hidden="true">↗</span></a>
+        <a id="wb-sponsor-link" target="_blank" rel="noopener noreferrer sponsored"><span class="wb-sponsor-mark" aria-hidden="true"><img class="wb-sponsor-image" alt="" draggable="false"></span><span class="wb-sponsor-copy"><span class="wb-sponsor-label">项目赞助</span><span id="wb-sponsor-message"></span></span><span class="wb-sponsor-arrow" aria-hidden="true">↗</span></a>
       </aside>
       <div class="bd" id="wb-body">
         <section class="wb-view" data-view="home">
@@ -87,15 +87,8 @@
           <button class="wb-link wb-back" type="button" data-ui-view="home">${svg('back')}任务首页</button><h2 class="wb-title">设置</h2>
           <section class="wb-setting-card wb-setting-target-card" aria-labelledby="wb-setting-target-title">
             <div class="wb-setting-card-head"><div><h3 id="wb-setting-target-title">播放目标</h3><p>达到目标后切换学习项，平台完成状态单独核对。</p></div><strong id="wb-setting-target-summary">100%</strong></div>
-            <div class="wb-target-presets" role="group" aria-label="快捷播放目标">${[80,90,100].map(value => `<button type="button" data-target-preset="${value}" aria-pressed="false">${value}%</button>`).join('')}</div>
-            <label class="wb-setting-input" for="wb-playback-target"><span>自定义目标</span><span class="target-value"><input id="wb-playback-target" type="number" min="80" max="100" step="1" value="100" aria-label="播放目标百分比"><span>%</span></span></label>
+            <div class="wb-target-presets" role="group" aria-label="播放目标"><button type="button" data-target-preset="80" aria-pressed="false">80%</button><label class="wb-setting-input" for="wb-playback-target"><span>自定义目标</span><span class="target-value"><input id="wb-playback-target" type="number" min="80" max="100" step="1" value="100" aria-label="播放目标百分比"><span>%</span></span></label></div>
             <p class="wb-setting-feedback" id="wb-setting-feedback" role="status" aria-live="polite"></p>
-          </section>
-          <section class="wb-setting-card" aria-labelledby="wb-setting-rules-title">
-            <div class="wb-setting-card-head"><div><h3 id="wb-setting-rules-title">任务规则</h3><p>按需扫描，一次只处理一门课。</p></div></div>
-            <div class="wb-setting-rule"><span>处理范围</span><strong>所选课程的音视频</strong></div>
-            <div class="wb-setting-rule"><span>异常恢复</span><strong>恢复时使用 100%</strong></div>
-            <div class="wb-setting-rule"><span>完成依据</span><strong>平台页面确认</strong></div>
           </section>
           <section class="wb-setting-card wb-setting-links" aria-labelledby="wb-setting-tools-title">
             <div class="wb-setting-card-head"><div><h3 id="wb-setting-tools-title">界面辅助</h3><p>查看任务状态和使用说明。</p></div></div>
@@ -120,7 +113,7 @@
       <nav class="wb-nav" id="wb-ui-nav" aria-label="助手导航"><button class="wb-link" type="button" data-ui-view="courses">全部课程</button><button class="wb-link" id="wb-ui-alert-link" type="button" data-ui-view="alerts" hidden></button><button class="wb-link" type="button" data-ui-view="details">概览</button></nav>
       <div class="wb-task-strip" id="wb-ui-task-strip" hidden><span id="wb-ui-task-label"></span><button class="wb-link" type="button" data-ui-view="home">回到任务</button></div>`;
     const $ = id => box.querySelector(`#${id}`);
-    if (imageUrl) box.querySelector('.wb-brand-image').src = imageUrl;
+    if (imageUrl) box.querySelector('.wb-sponsor-image').src = imageUrl;
     const body = $('wb-body');
     let view = 'home', selectedCourse = null, selectedResource = null, courseFilter = 'all', model = null;
     let helpReturn = 'home';
@@ -201,7 +194,7 @@
       if (model.manualMode) {
         const busy = model.job?.running || model.operationPending || model.resetPending;
         const loading = ['go-agent', 'entry-home', 'scan-home'].includes(model.job?.phase);
-        return '<div class="wb-summary-heading"><strong>已发现 ' + model.courses.length + ' 门课程</strong><button class="wb-link" type="button" data-refresh-list ' + (busy ? 'disabled' : '') + '>更新课表</button></div>' +
+        return '<div class="wb-summary-heading"><strong>已发现 ' + model.courses.length + ' 门课程</strong><button class="wb-link" type="button" data-refresh-list ' + (busy ? 'disabled' : '') + '>重新加载</button></div>' +
           (loading ? '<p class="wb-progress-meta" role="status">正在读取完整课表，请稍候…</p>' : '') +
           '<div class="wb-home-courses" role="region" aria-label="已发现的课程" tabindex="0">' +
           (model.courses.map((c, index) => homeCourseCard(c, index)).join('') || note(loading ? '课程会在识别后逐步显示。' : '没有发现正在上的课程，可重新扫描课表。')) + '</div>';
@@ -282,7 +275,7 @@
         const reveal = !disclosures.has(drawerKey);
         if (!disclosures.has(drawerKey)) disclosures.set(drawerKey, model.job?.targetIndex === index);
         const open = disclosures.get(drawerKey);
-        drawer = '<div class="wb-course-drawer" data-open="' + open + '" data-reveal="' + (reveal && open) + '"><button class="wb-drawer-toggle" type="button" data-course-drawer="' + index + '" aria-expanded="' + open + '" aria-controls="wb-drawer-' + index + '" title="展开或收起学习项"><span>音视频已确认</span><span>' + data.confirmed + ' / ' + data.total + '</span><span class="wb-drawer-chevron" aria-hidden="true">' + svg('chevron') + '</span></button><div class="wb-drawer-body" id="wb-drawer-' + index + '" aria-hidden="' + !open + '"' + (open ? '' : ' inert') + '><div class="wb-drawer-clip"><div class="wb-drawer-content">' + progressBar('本课学习项完成比例（平台确认）', data.confirmed, data.total) + '<div class="wb-drawer-footer"><span>' + (data.total ? '待完成 ' + remaining(data) + ' 项' : '没有音视频') + '</span><button class="wb-link" type="button" data-course="' + index + '">查看明细 ›</button></div></div></div></div></div>';
+        drawer = '<div class="wb-course-drawer" data-open="' + open + '" data-reveal="' + (reveal && open) + '"><button class="wb-drawer-toggle" type="button" data-course-drawer="' + index + '" aria-expanded="' + open + '" aria-controls="wb-drawer-' + index + '" title="展开或收起学习项"><span class="wb-drawer-count" aria-label="音视频已确认数与总数">' + data.confirmed + ' / ' + data.total + '</span><span class="wb-drawer-chevron" aria-hidden="true">' + svg('chevron') + '</span></button><div class="wb-drawer-body" id="wb-drawer-' + index + '" aria-hidden="' + !open + '"' + (open ? '' : ' inert') + '><div class="wb-drawer-clip"><div class="wb-drawer-content">' + progressBar('本课学习项完成比例（平台确认）', data.confirmed, data.total) + '<div class="wb-drawer-footer"><span>' + (data.total ? '待完成 ' + remaining(data) + ' 项' : '没有音视频') + '</span><button class="wb-link" type="button" data-course="' + index + '">查看明细 ›</button></div></div></div></div></div>';
       }
       return '<article class="wb-home-course" data-current="' + (model.job?.targetIndex === index) + '"><div class="wb-home-course-row"><button class="wb-home-course-info" type="button" data-course="' + index + '" aria-label="查看课程详情：' + esc(c.title) + '"><strong>' + esc(c.title) + '</strong>' + (status ? '<span>' + esc(status) + '</span>' : '') + '</button>' + learningAction(c, index) + '</div>' + drawer + '</article>';
     }
@@ -364,7 +357,7 @@
         <li><strong>首页直接选课</strong><p>扫描完成后，课程卡片直接显示在首页。点击“开始学习”，自动进入所选课程，核对完整目录后开始学习。点击课程名称只查看已有结果。</p></li>
         <li><strong>设置播放目标</strong><p>点击齿轮设置 80%–100% 目标。有效整数立即保存，当前正常播放在下一次检查采用新值；异常重试保持 100%。达到目标与平台确认分别记录。</p></li>
         <li><strong>单课结束与暂停</strong><p>只处理所选课程，结束后等待你选择下一门。扫描期间暂停也会取消后续播放；需要继续时点击“继续学习”。收起面板只隐藏界面。</p></li></ol>
-        <details class="wb-more" data-ui-disclosure="guide-wait"><summary>扫描等待或数量不一致</summary><p class="wb-caption">保持课表和学习页打开，等待章节加载。新增资源、目录变化或网络延迟时会重新核对；请先核对网站目录，不要反复点击开始。可在“设置 → 任务概览与日志”查看原因。</p></details>
+        <details class="wb-more" data-ui-disclosure="guide-rules"><summary>任务规则</summary><p class="wb-caption">按需扫描，一次只处理所选课程的音视频。异常恢复时使用 100% 播放目标；完成状态以平台页面确认为准。</p></details><details class="wb-more" data-ui-disclosure="guide-wait"><summary>扫描等待或数量不一致</summary><p class="wb-caption">保持课表和学习页打开，等待章节加载。新增资源、目录变化或网络延迟时会重新核对；请先核对网站目录，不要反复点击开始。可在“设置 → 任务概览与日志”查看原因。</p></details>
         <details class="wb-more" data-ui-disclosure="guide-restart"><summary>更新、中断与重置</summary><p class="wb-caption">更新后重载扩展并刷新课程页。扩展重启后如显示任务已中断，请回到首页点击开始，重新核对课程。重置会停止任务并清除本地断点、统计和日志，不会删除网站进度。</p></details>
         <details class="wb-more" data-ui-disclosure="guide-limits"><summary>哪些内容需要自己处理</summary><p class="wb-caption">登录失效、验证码、题目和平台限制需要人工处理。当前按正在上的课程扫描，不提供仅考核课程筛选或自定义节数。文档、作业和考试仍需自行处理；最终完成状态以平台为准。</p></details>`;
     }

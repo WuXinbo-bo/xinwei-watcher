@@ -78,6 +78,9 @@ async function main() {
     assert.equal(await sponsor.isVisible(), true);
     assert.equal(await sponsor.evaluate(el => el.previousElementSibling.id), 'wb-drag');
     const sponsorHeight = (await sponsor.boundingBox()).height;
+    assert.equal(await page.locator('#wb-drag img').count(), 0);
+    assert.equal(await page.locator('.wb-sponsor-image').evaluate(img => img.complete && img.naturalWidth > 0), true);
+    assert.equal(await page.locator('.wb-sponsor-copy').evaluate(el => getComputedStyle(el).flexDirection), 'row');
     await snap('01-ready'); checks.push('real extension, corrected brand, gear icon, local image, compact home');
     const initialCopy = await sponsorCopy.textContent();
     await page.mouse.move(10, 10);
@@ -133,6 +136,13 @@ async function main() {
     await page.locator('#wb-overview-more summary').click();
     await navigate('logs'); await snap('09-logs');
     await navigate('settings'); await snap('10-settings');
+    assert.equal(await page.locator('[data-target-preset]').count(), 1);
+    const targetRow = await page.locator('.wb-target-presets').evaluate(el => {const a=el.querySelector('button').getBoundingClientRect(), b=el.querySelector('label').getBoundingClientRect();return {aligned:Math.abs((a.y+a.height/2)-(b.y+b.height/2))<2,fits:el.scrollWidth<=el.clientWidth};});
+    assert.ok(targetRow.aligned && targetRow.fits);
+    assert.equal(await page.locator('#wb-setting-rules-title').count(), 0);
+    await navigate('help');
+    assert.equal(await page.locator('[data-ui-disclosure=guide-rules]').count(), 1);
+    await navigate('settings');
     await page.locator('[data-target-preset="80"]').click();
     await page.waitForFunction(() => document.getElementById('wb-playback-target').value === '80');
     await page.locator('#wb-playback-target').fill('92');
@@ -278,6 +288,10 @@ async function main() {
     assert.match(await page.locator('#wb-home-summary .wb-course-state').textContent(), /学习中/);
     assert.equal(await page.locator('#wb-ui-title').isVisible(), false);
     await snap('25-home-learning');
+    assert.equal(await page.locator('#wb-home-summary [data-refresh-list]').textContent(), '重新加载');
+    assert.equal(await drawerToggle.locator('span').first().textContent(), '1 / 3');
+    const proportions = await page.locator('.wb-home-course').first().evaluate(el => ({top:el.querySelector('.wb-home-course-row').getBoundingClientRect().height, bottom:el.querySelector('.wb-drawer-toggle').getBoundingClientRect().height}));
+    assert.ok(proportions.top > proportions.bottom, 'course title has more vertical space than the compact drawer strip');
     checks.push('home course cards, one-click learning entry, per-course details, busy lock, continue and narrow layout');
     assert.deepEqual(errors, []);
     const report = {passed:true, browser:context.browser()?.version(), checks, scenarios:scenarios.length, errors, artifacts};

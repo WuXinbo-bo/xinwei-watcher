@@ -42,13 +42,13 @@ test('sponsor copy rotates without task commands, layout replacement or a visibl
     assert.equal(box.querySelector('#wb-sponsor').getAttribute('aria-label'), '项目赞助');
     assert.equal(box.querySelector('.wb-sponsor-label').textContent, '项目赞助');
     f.api.state.uiController.navigate('settings');
-    assert.deepEqual([...box.querySelectorAll('.wb-setting-card h3')].map(node => node.textContent), ['播放目标', '任务规则', '界面辅助', '任务数据']);
+    assert.deepEqual([...box.querySelectorAll('.wb-setting-card h3')].map(node => node.textContent), ['播放目标', '界面辅助', '任务数据']);
     assert.equal(box.querySelector('#wb-setting-target-summary').textContent, '100%');
     const first = f.message(), link = box.querySelector('#wb-sponsor-link');
     let commands = 0; f.window.chrome.runtime.sendMessage = async () => { commands++; };
     f.advance(10140); assert.notEqual(f.message(), first); assert.equal(box.querySelector('#wb-sponsor-link'), link);
     assert.equal(box.querySelector('#wb-sponsor-toggle'), null);
-    assert.ok(box.querySelector('.wb-sponsor-mark svg'));
+    assert.ok(box.querySelector('.wb-sponsor-mark img'));
     assert.equal(box.querySelector('#wb-sponsor').dataset.motion, 'active');
     assert.equal(commands, 0); assert.equal(f.api.state.running, false);
   } finally { f.window.close(); }
@@ -79,7 +79,7 @@ test('reduced motion and one sponsor message remain static; unsafe or disabled s
     f.api.PROMOTION_CONFIG.services = ['单条服务']; f.api.updateTaskControls();
     assert.equal(f.timerCount(), 0);
     f.api.PROMOTION_CONFIG.brand = '<img src=x onerror=alert(1)>'; f.api.updateTaskControls();
-    assert.match(f.message(), /<img/); assert.equal(f.window.document.querySelector('#wb-sponsor img'), null);
+    assert.match(f.message(), /<img/); assert.equal(f.window.document.querySelector('#wb-sponsor-message img'), null);
     f.api.PROMOTION_CONFIG.url = 'javascript:alert(1)'; f.api.updateTaskControls();
     assert.equal(f.window.document.getElementById('wb-sponsor').hidden, true); assert.equal(f.timerCount(), 0);
     f.api.PROMOTION_CONFIG.url = 'https://example.test/'; f.api.PROMOTION_CONFIG.enabled = false; f.api.updateTaskControls();
