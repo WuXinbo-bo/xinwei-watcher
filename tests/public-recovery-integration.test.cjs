@@ -94,7 +94,7 @@ test('按需完整流程：列表后逐课扫描、显式开始本课、自然�
             course.completed.add(index);
             items[index].querySelector('.lecture-status').innerHTML = '<i class="done-icon"></i>';
           }
-          if (f.media.paused || f.media.ended || purpose !== 'play') return;
+          if (f.media.paused || f.media.ended || job?.targetPurpose !== 'play') return;
           const item = items[active], key = f.api.getItemKey(item);
           const observed = f.api.state.processedItems.get(key)?.playbackAttempt;
           if (!observed?.after) return;
@@ -119,7 +119,7 @@ test('按需完整流程：列表后逐课扫描、显式开始本课、自然�
         } catch (error) { errors.push(error); }
       }, 10);
       f.window.document.querySelector('.vjs-big-play-button').addEventListener('click', () => {
-        if (course !== courses[0] || purpose !== 'play') return;
+        if (course !== courses[0] || c.storage.session[KEY]?.targetPurpose !== 'play') return;
         recoveryClicks += 1;
         if (recoveryClicks === 2) {
           allowedRetry = true;
@@ -182,25 +182,21 @@ test('按需完整流程：列表后逐课扫描、显式开始本课、自然�
         const owner = documents.get(job.ownerTabId);
         await waitFor(() => !owner.api.state.jobPromise);
         await owner.api.syncSharedJob();
-        owner.api.state.uiController.navigate('courses');
-        const card = [...owner.window.document.querySelectorAll('.wb-view[data-view=courses] [data-course]')].find(el => el.querySelector('.wb-row-title').textContent === courses[index].title);
+        owner.api.state.uiController.navigate('home');
+        const card = [...owner.window.document.querySelectorAll('#wb-home-summary .wb-home-course')].find(el => el.querySelector('strong').textContent === courses[index].title);
         assert.ok(card, 'selected course row exists');
-        card.click();
-        assert.equal(owner.window.document.querySelector('.wb-view[data-view=course] h2').textContent, courses[index].title);
-        assert.equal(owner.window.document.querySelector('.wb-view[data-view=course] [data-course-action=' + purpose + ']').dataset.actionCourse, String(index));
-        owner.window.document.querySelector('.wb-view[data-view=course] [data-course-action=' + purpose + ']').click();
+        card.querySelector('[data-course-action=learn]').click();
         await waitFor(() => c.storage.session[KEY].generation > job.generation);
         await waitFor(() => c.storage.session[KEY]?.phase === 'selection' || errors.length, 45000);
         if (errors.length) throw errors[0];
         assert.equal(c.storage.session[KEY].running, false);
         await new Promise(resolve => setTimeout(resolve, 30));
       };
-      for (let index = 0; index < courses.length; index++) await choose(index, 'inspect');
-      assert.equal(endings.length, 0, 'all directory inspections leave playback idle');
-      await choose(0, 'play');
+      await choose(0, 'learn');
       assert.deepEqual(endings, ['暂时故障视频']);
-      assert.equal(c.storage.session[KEY].candidates[1].remaining, 2, 'next course stays pending until explicitly selected');
-      await choose(1, 'play');
+      assert.equal(c.storage.session[KEY].candidates[1].remaining, null, 'next course stays unscanned until explicitly selected');
+      await choose(1, 'learn');
+      await choose(2, 'learn');
       if (errors.length) throw errors[0];
       await waitFor(() => documents.get(c.storage.session[KEY].ownerTabId).api.state.job?.phase === 'selection');
       const job = c.storage.session[KEY];
@@ -213,7 +209,7 @@ test('按需完整流程：列表后逐课扫描、显式开始本课、自然�
       assert.equal(recoveryClicks, 2);
       assert.equal(c.reloads.length, 2, 'each media course is refreshed once after its first pass');
       assert.equal(requests.filter(message => message.action === 'reload-course').length, 0);
-      assert.deepEqual(playbackVisits.map(visit => visit.title), [courses[0].title, courses[0].title, courses[1].title, courses[1].title]);
+      assert.deepEqual(playbackVisits.map(visit => visit.title), [courses[0].title, courses[1].title]);
       assert.deepEqual(endings, ['暂时故障视频', '正常短音频', '正常长视频']);
       assert.equal(markEvidence.length, 3);
       assert.equal(markEvidence.every(record => record.ended && record.confirmed === false), true);
@@ -230,7 +226,7 @@ test('按需完整流程：列表后逐课扫描、显式开始本课、自然�
           .filter(item => ['video', 'audio'].includes(item.kind)).map(item => item.title).sort());
         assert.equal(records.every(record => record.ended && record.confirmed && !record.progressGap), true);
       }
-      assert.equal(c.tabs.get(job.ownerTabId).url, courses[1].url);
+      assert.equal(c.tabs.get(job.ownerTabId).url, courses[2].url);
       assert.equal(job.phase, 'selection');
     } catch (error) {
       console.error(JSON.stringify({ job: c.storage.session[KEY], inspection, playbackVisits,

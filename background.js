@@ -1171,6 +1171,7 @@
     delete job.expectedRefresh;
     job.lastOperation = job.operation;
     job.operation = '';
+    delete job.learnAfterScan;
     job.selectedIndex = null;
     delete job.resumePhase;
     delete job.interruption;
@@ -1187,7 +1188,7 @@
     }
     const candidate = Number.isInteger(msg.index) && job.candidates[msg.index];
     if (!candidate || msg.candidateKey !== (candidate.courseKey || candidate.key) ||
-        !['inspect', 'play'].includes(msg.purpose)) throw new Error('课程选择已变化，请重新选择');
+        !['inspect', 'play', 'learn'].includes(msg.purpose)) throw new Error('课程选择已变化，请重新选择');
     if (msg.purpose === 'play' && (!Number.isFinite(candidate.scannedAt) ||
         !candidate.directory || candidate.scanState !== 'ready')) {
       throw new Error('请先完整扫描这门课的目录');
@@ -1199,10 +1200,11 @@
     // from any previous operation can no longer authorize navigation.
     job.generation += 1;
     job.running = true;
-    job.operation = msg.purpose;
+    job.learnAfterScan = msg.purpose === 'learn';
+    job.operation = job.learnAfterScan ? 'inspect' : msg.purpose;
     job.selectedIndex = msg.index;
     job.targetIndex = msg.index;
-    job.targetPurpose = msg.purpose;
+    job.targetPurpose = job.operation;
     job.homeTabId = sender.tab.id;
     job.homeInstance = msg.instanceId;
     job.workerTabId = null;
@@ -1213,7 +1215,7 @@
     for (const key of ['reason', 'resumePhase', 'returningTabId', 'returnDeadline',
       'navigationRecovery', 'openRecovery', 'interruption', 'expectedRefresh']) delete job[key];
     delete candidate.scanDraft;
-    if (msg.purpose === 'inspect') {
+    if (job.operation === 'inspect') {
       candidate.scanState = 'scanning';
       delete candidate.scanError;
     } else {
@@ -1231,7 +1233,7 @@
       job.workerTabId = sender.tab.id;
       if (route(current) === 'learn' && courseKey(current) === candidate.courseKey) {
         job.phase = 'course';
-        addLog(job, msg.purpose === 'inspect' ? `仅扫描本课：${candidate.title}` : `仅学习本课：${candidate.title}`);
+        addLog(job, job.operation === 'inspect' ? `核对本课目录：${candidate.title}` : `仅学习本课：${candidate.title}`);
         return save(job);
       }
       job.phase = 'opening';
@@ -2240,6 +2242,17 @@
         candidate.status = result.remaining === 0 ? 'complete' : 'inspected';
         candidate.scannedAt = Date.now(); candidate.scanState = 'ready';
         delete candidate.scanError;
+        if (job.learnAfterScan && result.remaining > 0) {
+          const previousGeneration = job.generation;
+          job.generation += 1;
+          job.operation = 'play'; job.targetPurpose = 'play';
+          delete job.learnAfterScan;
+          for (const key of ['pass', 'finalPass', 'lastRefresh', 'refreshTokens', 'currentResource', 'retryAt']) delete candidate[key];
+          candidate.previousRecords = copy(candidate.records);
+          candidate.records = Object.fromEntries(Object.entries(candidate.records).filter(([, record]) => record.confirmed));
+          addLog(job, `本课目录已核对，按用户授权开始学习：${candidate.title}`);
+          return saveOwnerHandoff(job, previousGeneration);
+        }
         return save(awaitSelection(job, `本课扫描完成：${candidate.title}，待完成 ${result.remaining}/${result.total} 项；等待用户选择。`));
       }
       const outstanding = outstandingRecords(candidate, job.singlePass);

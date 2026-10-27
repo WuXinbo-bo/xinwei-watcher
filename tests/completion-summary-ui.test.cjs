@@ -84,3 +84,30 @@ test('a live course page outside the job does not inflate task course totals',()
     f.ui.navigate('courses');assert.equal(f.box.querySelector('[data-course]'),null);
   } finally {f.window.close();}
 });
+
+test('course drawer waits for complete scan, opens once, remembers closing and stays read-only',()=>{
+  const f=setup();
+  try {
+    const c=f.job.candidates[0];
+    f.job.workflow='manual';f.job.operation='inspect';f.job.running=true;f.job.phase='course';
+    c.scanState='scanning';f.ui.render();
+    assert.equal(f.box.querySelector('[data-course-drawer]'),null);
+    assert.equal(f.box.querySelector('#wb-home-course-progress').hidden,true);
+    c.scanState='ready';c.scannedAt=Date.now();f.job.operation='play';f.ui.render();
+    const toggle=()=>f.box.querySelector('[data-course-drawer="0"]');
+    assert.equal(toggle().getAttribute('aria-expanded'),'true');
+    assert.equal(toggle().closest('.wb-home-course').querySelector('[role=progressbar]').getAttribute('aria-valuenow'),'50');
+    let commands=0;f.window.chrome.runtime.sendMessage=async()=>{commands++;return {ok:true};};
+    toggle().click();f.ui.render();
+    assert.equal(toggle().getAttribute('aria-expanded'),'false');
+    assert.equal(f.box.querySelector('#wb-drawer-0').hasAttribute('inert'),true);
+    c.records[c.directory.items[1].key]={confirmed:true};f.ui.render();
+    assert.equal(toggle().getAttribute('aria-expanded'),'false');
+    toggle().click();assert.equal(toggle().getAttribute('aria-expanded'),'true');
+    assert.equal(commands,0);
+    c.scanState='scanning';f.ui.render();assert.equal(toggle(),null);
+    c.scanState='ready';f.ui.render();assert.equal(toggle().getAttribute('aria-expanded'),'true');
+    f.job.targetIndex=1;f.ui.render();
+    assert.equal(f.box.querySelector('[data-course-drawer="1"]'),null,'unscanned next course does not inherit progress');
+  } finally {f.window.close();}
+});

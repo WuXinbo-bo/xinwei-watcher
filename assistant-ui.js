@@ -197,11 +197,12 @@
     }
     function taskSummary() {
       if (model.manualMode) {
-        const o = model.overview, scanned = model.courses.length - o.courseUnscanned;
-        return '<div class="wb-summary-heading"><button type="button" class="wb-link" data-course-filter="all">课程总览 <span aria-hidden="true">›</span></button><span class="wb-summary-total">' + (o.courseTotal == null ? '正在获取' : '共 ' + o.courseTotal + ' 门') + '</span></div>' +
-          '<p class="wb-progress-meta">已扫描 ' + scanned + ' 门 · 尚未扫描 ' + o.courseUnscanned + ' 门</p>' +
-          '<div class="wb-summary-counts"><button type="button" data-course-filter="complete">已确认 <strong>' + o.courseConfirmed + '</strong> 门</button><button type="button" data-course-filter="pending">已知待完成 <strong>' + o.coursePending + '</strong> 门</button></div>' +
-          (o.courseTotal ? progressBar('课程目录已扫描比例', scanned, o.courseTotal) : '');
+        const busy = model.job?.running || model.operationPending || model.resetPending;
+        const loading = ['go-agent', 'entry-home', 'scan-home'].includes(model.job?.phase);
+        return '<div class="wb-summary-heading"><strong>已发现 ' + model.courses.length + ' 门课程</strong><button class="wb-link" type="button" data-refresh-list ' + (busy ? 'disabled' : '') + '>重新扫描</button></div>' +
+          (loading ? '<p class="wb-progress-meta" role="status">正在读取完整课表，请稍候…</p>' : '') +
+          '<div class="wb-home-courses" role="region" aria-label="已发现的课程" tabindex="0">' +
+          (model.courses.map((c, index) => homeCourseCard(c, index)).join('') || note(loading ? '课程会在识别后逐步显示。' : '没有发现正在上的课程，可重新扫描课表。')) + '</div>';
       }
       const o = model.overview, pending = o.courseTotal == null ? null : Math.max(0, o.courseTotal - o.courseConfirmed);
       const scanning = ['go-agent', 'entry-home', 'scan-home'].includes(model.job?.phase);
@@ -251,9 +252,35 @@
       const disabled = model.job?.running || model.operationPending || model.resetPending || !model.job ? ' disabled' : '';
       const index = model.courses.indexOf(c);
       const scan = '<button class="btn" type="button" data-course-action="inspect" data-action-course="' + index + '"' + disabled + '>' + (c.scannedAt ? '重新扫描' : '扫描目录') + '</button>';
-      const play = c.scanState === 'ready' && c.scannedAt && c.total > 0 && c.remaining > 0
-        ? '<button class="btn primary" type="button" data-course-action="play" data-action-course="' + index + '"' + disabled + '>开始本课</button>' : '';
-      return '<div class="wb-actions wb-actions-inline wb-course-actions">' + scan + play + '</div>';
+      return '<div class="wb-actions wb-actions-inline wb-course-actions">' + learningAction(c, index) + scan + '</div>';
+    }
+    function learningAction(c, index) {
+      const active = model.job?.targetIndex === index;
+      const running = active && model.job?.running;
+      const paused = active && model.job?.phase === 'paused';
+      const disabled = model.job?.running || model.operationPending || model.resetPending || !model.job ||
+        (paused && model.job.ownerTabId !== model.tabId);
+      const label = running ? model.job.operation === 'inspect' ? '扫描中…' : '学习中…' : paused ? '继续学习' :
+        c.scanState === 'error' ? '重试本课' : isCourseComplete(c) ? '重新核对' : '开始学习';
+      return '<button class="btn primary wb-course-start" type="button" data-course-action="' + (paused ? 'continue' : 'learn') + '" data-action-course="' + index + '" aria-label="' + esc(label + '：' + c.title) + '"' + (disabled ? ' disabled' : '') + '>' + label + '</button>';
+    }
+    function homeCourseCard(c, index) {
+      const status = model.job?.running && model.job.targetIndex === index ?
+        model.job.operation === 'inspect' ? '正在核对本课目录' : '正在学习本课' :
+        c.scanState === 'error' ? '目录未完整读取，请重试' :
+        c.scanState === 'ready' ? isCourseComplete(c) ? '音视频已完成' : '' :
+        c.scannedAt ? '待重新核对' : '点击开始，自动扫描本课';
+      const scanning = c.scanState === 'scanning' || (model.job?.running && model.job.targetIndex === index && model.job.operation === 'inspect');
+      const drawerKey = 'course-drawer:' + index;
+      const data = progressData(c);
+      let drawer = '';
+      if (scanning) disclosures.delete(drawerKey);
+      if (!scanning && c.scanState === 'ready' && data && data.total != null) {
+        if (!disclosures.has(drawerKey)) disclosures.set(drawerKey, true);
+        const open = disclosures.get(drawerKey);
+        drawer = '<div class="wb-course-drawer" data-open="' + open + '"><button class="wb-drawer-toggle" type="button" data-course-drawer="' + index + '" aria-expanded="' + open + '" aria-controls="wb-drawer-' + index + '"><span>本课学习项</span><span>' + data.confirmed + ' / ' + data.total + '</span><span class="wb-drawer-chevron" aria-hidden="true">⌄</span></button><div class="wb-drawer-body" id="wb-drawer-' + index + '" aria-hidden="' + !open + '"' + (open ? '' : ' inert') + '><div class="wb-drawer-clip"><div class="wb-drawer-content">' + progressBar('本课学习项完成比例（平台确认）', data.confirmed, data.total) + '<div class="wb-drawer-footer"><span>' + (data.total ? '待完成 ' + remaining(data) + ' 项' : '没有音视频') + '</span><button class="wb-link" type="button" data-course="' + index + '">查看明细 ›</button></div></div></div></div></div>';
+      }
+      return '<article class="wb-home-course" data-current="' + (model.job?.targetIndex === index) + '"><div class="wb-home-course-row"><button class="wb-home-course-info" type="button" data-course="' + index + '" aria-label="查看课程详情：' + esc(c.title) + '"><strong>' + esc(c.title) + '</strong>' + (status ? '<span>' + esc(status) + '</span>' : '') + '</button>' + learningAction(c, index) + '</div>' + drawer + '</article>';
     }
     function coursesPage() {
       const inspected = model.courses.filter(c => model.manualMode ? c.scanState === 'ready' : Array.isArray(c.directory?.items) || Number.isInteger(c.total)).length;
@@ -265,7 +292,7 @@
         html += '<div class="wb-filters" role="group" aria-label="筛选课程">' + Object.entries(filters).map(([key, label]) => '<button type="button" data-course-filter="' + key + '" aria-pressed="' + (courseFilter === key) + '">' + label + '</button>').join('') + '</div>';
         html += '<p class="wb-caption">仅查看目录，不会切换播放。</p>';
       }
-      if (model.manualMode) html += '<p class="wb-caption">选择扫描或开始本课；结束后等待你选择，不自动处理其他课程。</p>' + (!model.job?.running ? '<button class="wb-link" type="button" data-refresh-list ' + (model.operationPending || model.resetPending ? 'disabled' : '') + '>更新课程列表</button>' : '');
+      if (model.manualMode) html += '<p class="wb-caption">开始学习会先核对目录，再处理本课；也可以只扫描目录。</p>' + (!model.job?.running ? '<button class="wb-link" type="button" data-refresh-list ' + (model.operationPending || model.resetPending ? 'disabled' : '') + '>更新课程列表</button>' : '');
       if (!model.courses.length) return html + note(model.manualMode ? '点击获取课程列表，再选择一门课扫描目录。' : '开始任务后将扫描正在上的课程。扫描期间，已发现的课程会逐步出现在这里。');
       return html + (visible.map(({c, index}) => {
         const row = '<button class="wb-course-row" type="button" data-course="' + index + '"><span class="wb-row-main"><span class="wb-row-title">' + esc(c.title) + '</span><span class="wb-row-meta">' + esc(courseCount(c)) + '</span></span><span class="wb-row-status" data-active="' + (model.activeCourseKey === courseKey(c)) + '">' + esc(courseLabel(c)) + ' ›</span></button>';
@@ -284,7 +311,7 @@
       if (!items) {
         if (model.job?.running && model.activeCourseKey === courseKey(c)) return html + note('正在读取课程目录，请稍候。已识别的条目会在目录就绪后显示。');
         if (c.failures?.length || c.status === 'manual') return html + note(`目录尚未读取完成，请检查网站页面。${(c.failures || []).join('；')}`);
-        return html + note(model.manualMode ? '尚未读取这门课的目录。点击“扫描目录”后展示本课待完成内容，不会开始学习。' : '尚未读取这门课的目录。统计完成后会展示音视频明细。');
+        return html + note(model.manualMode ? '尚未读取这门课的目录。“开始学习”会核对目录后自动学习；“扫描目录”只读取结果。' : '尚未读取这门课的目录。统计完成后会展示音视频明细。');
       }
       if (!c.live || c.directoryStale) html += note('当前显示上次读取的目录，平台状态可能已变化。');
       if (!items.length) return html + note('已读取目录，本课没有可处理的音视频。文档、考试和作业需自行处理。');
@@ -328,15 +355,15 @@
       return `<button class="wb-link wb-back" type="button" data-help-return>${svg('back')}返回原面板</button><h2 class="wb-title">使用指南</h2>
         <p class="wb-caption">先核对课程，再开始学习。查看指南不会暂停或切换任务。</p>
         <ol class="wb-guide-steps"><li><strong>获取课程列表</strong><p>登录芯位蜜线，打开助手并点击“获取课程列表”。助手只读取课表，完成后等待你选择，不会逐门进入课程。</p></li>
-        <li><strong>按需扫描本课</strong><p>点击课程总览，选择一门课的“扫描目录”。仅核对本课章节和音视频；完成后查看待完成项。点击课程名称只是查看已有结果，不会扫描或播放。</p></li>
+        <li><strong>首页直接选课</strong><p>扫描完成后，课程卡片直接显示在首页。点击“开始学习”，自动进入所选课程，核对完整目录后开始学习。点击课程名称只查看已有结果。</p></li>
         <li><strong>设置播放目标</strong><p>点击齿轮设置 80%–100% 目标。有效整数立即保存，当前正常播放在下一次检查采用新值；异常重试保持 100%。达到目标与平台确认分别记录。</p></li>
-        <li><strong>开始本课与暂停</strong><p>扫描完成后点击“开始本课”，只处理本课音视频，结束后停止。不会自动切到下一门课。暂停后由你继续；收起面板只隐藏界面。</p></li></ol>
+        <li><strong>单课结束与暂停</strong><p>只处理所选课程，结束后等待你选择下一门。扫描期间暂停也会取消后续播放；需要继续时点击“继续学习”。收起面板只隐藏界面。</p></li></ol>
         <details class="wb-more" data-ui-disclosure="guide-wait"><summary>扫描等待或数量不一致</summary><p class="wb-caption">保持课表和学习页打开，等待章节加载。新增资源、目录变化或网络延迟时会重新核对；请先核对网站目录，不要反复点击开始。可在“设置 → 任务概览与日志”查看原因。</p></details>
         <details class="wb-more" data-ui-disclosure="guide-restart"><summary>更新、中断与重置</summary><p class="wb-caption">更新后重载扩展并刷新课程页。扩展重启后如显示任务已中断，请回到首页点击开始，重新核对课程。重置会停止任务并清除本地断点、统计和日志，不会删除网站进度。</p></details>
         <details class="wb-more" data-ui-disclosure="guide-limits"><summary>哪些内容需要自己处理</summary><p class="wb-caption">登录失效、验证码、题目和平台限制需要人工处理。当前按正在上的课程扫描，不提供仅考核课程筛选或自定义节数。文档、作业和考试仍需自行处理；最终完成状态以平台为准。</p></details>`;
     }
     function aboutPage() {
-      let html = title('关于与服务', 'settings', '设置') + '<p class="wb-caption">Xinwei Course Watcher · 1.2.0 按需版本</p>' + note('面向 Beeline AI 学习页面。保留原作者署名与 Apache License 2.0。');
+      let html = title('关于与服务', 'settings', '设置') + '<p class="wb-caption">Xinwei Course Watcher · 1.3.0 按需版本</p>' + note('面向 Beeline AI 学习页面。保留原作者署名与 Apache License 2.0。');
       const data = sponsorData();
       if (data) html += `<p class="wb-caption">第三方商业服务 · 非平台或原作者官方服务</p><a class="wb-external" href="${esc(data.url)}" target="_blank" rel="noopener noreferrer sponsored">${esc(data.brand)} · ${esc(data.items.join(' / '))} ↗</a>`;
       return html;
@@ -465,19 +492,27 @@
       for (const page of box.querySelectorAll('[data-view]')) page.hidden = page.dataset.view !== view;
       $('wb-ui-nav').hidden = true; $('wb-ui-task-strip').hidden = view === 'home' || !model.hasTaskState;
       text('wb-ui-status', model.home.status); text('wb-ui-title', model.home.title); text('wb-ui-subtitle', model.home.subtitle);
-      $('wb-ui-subtitle').hidden = !model.home.subtitle;
+      const choosing = model.manualMode && model.job?.phase === 'selection' && model.job.lastOperation === 'list';
+      $('wb-ui-title').hidden = Boolean(choosing);
+      $('wb-ui-subtitle').hidden = !model.home.subtitle || Boolean(choosing);
       text('wb-ui-caption', model.home.caption); $('wb-ui-caption').hidden = !model.home.caption;
       $('wb-home-summary').hidden = !model.job;
+      $('wb-home-summary').classList.toggle('wb-home-selection', model.manualMode);
       const summary = $('wb-home-task-progress');
       const summaryHtml = model.job ? taskSummary() : '';
       if (summary.innerHTML !== summaryHtml) {
-        const focused = summary.contains(document.activeElement) ? document.activeElement.dataset.courseFilter : null;
+        const focus = summary.contains(document.activeElement) ? document.activeElement : null;
+        const attribute = focus && ['data-course-filter', 'data-course', 'data-action-course', 'data-refresh-list', 'data-course-drawer'].find(a => focus.hasAttribute(a));
+        const value = attribute && focus.getAttribute(attribute);
+        const listTop = summary.querySelector('.wb-home-courses')?.scrollTop || 0;
         summary.innerHTML = summaryHtml;
-        if (focused) summary.querySelector(`[data-course-filter="${focused}"]`)?.focus({preventScroll: true});
+        if (attribute) [...summary.querySelectorAll('button')].find(el => el.getAttribute(attribute) === value)?.focus({preventScroll: true});
+        const list = summary.querySelector('.wb-home-courses');
+        if (list) list.scrollTop = listTop;
       }
       const current = model.courses.find(c => courseKey(c) === model.activeCourseKey);
       const courseProgress = $('wb-home-course-progress'), courseHtml = current ? learningProgress(current, true) : '';
-      courseProgress.hidden = !current || !model.job;
+      courseProgress.hidden = model.manualMode || !current || !model.job;
       if (courseProgress.innerHTML !== courseHtml) {
         const focused = courseProgress.contains(document.activeElement);
         courseProgress.innerHTML = courseHtml;
@@ -491,9 +526,10 @@
       if (p) {
         text('wb-ui-progress-label', p.label); text('wb-ui-progress-text', p.text);
       }
-      $('wb-start').hidden = !model.home.showStart;
+      const inlineCourses = model.manualMode && model.courses.length > 0 && model.job?.listScannedAt && !['go-agent', 'entry-home', 'scan-home'].includes(model.job.phase);
+      $('wb-start').hidden = !model.home.showStart || Boolean(inlineCourses);
       $('wb-stop').hidden = !model.home.showStop;
-      $('wb-ui-results').hidden = !model.home.showResults;
+      $('wb-ui-results').hidden = !model.home.showResults || Boolean(inlineCourses && !model.alerts.length);
       $('wb-ui-results').dataset.uiView = model.alerts.length ? 'alerts' : 'courses';
       text('wb-ui-results', model.alerts.length ? '查看待处理事项' : '查看课程结果');
       $('wb-ui-reset-retry').hidden = !model.home.resetRetry;
@@ -526,16 +562,25 @@
     box.addEventListener('click', event => {
       const control = event.target.closest('button');
       if (!control || control.disabled) return;
+      if (control.hasAttribute('data-course-drawer')) {
+        const key = 'course-drawer:' + control.dataset.courseDrawer;
+        const open = !disclosures.get(key);
+        disclosures.set(key, open);
+        control.setAttribute('aria-expanded', String(open));
+        const drawer = control.closest('.wb-course-drawer'), body = drawer.querySelector('.wb-drawer-body');
+        drawer.dataset.open = String(open); body.setAttribute('aria-hidden', String(!open));
+        body.toggleAttribute('inert', !open); saveView(); return;
+      }
       if (control.hasAttribute('data-help-return')) { navigate(helpReturn); $('wb-help').focus({ preventScroll: true }); return; }
       if (control.hasAttribute('data-course-action')) {
         const c = model.courses[Number(control.dataset.actionCourse)];
         if (c && !model.job?.running && !model.operationPending) {
-          navigate('course', { course: courseKey(c) });
+          navigate(control.dataset.courseAction === 'inspect' ? 'course' : 'home', { course: courseKey(c) });
           onCourseAction?.(courseKey(c), control.dataset.courseAction);
         }
         return;
       }
-      if (control.hasAttribute('data-refresh-list')) { onCourseAction?.(null, 'list'); return; }
+      if (control.hasAttribute('data-refresh-list')) { navigate('home'); onCourseAction?.(null, 'list'); return; }
       if (control.hasAttribute('data-course-filter')) navigate('courses', { filter: control.dataset.courseFilter });
       else if (control.id === 'wb-ui-directory' || control.hasAttribute('data-current-directory')) {
         const c = model.courses.find(c => courseKey(c) === model.activeCourseKey);

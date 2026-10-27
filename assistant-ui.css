@@ -174,3 +174,30 @@
 #wb-study-ui .wb-course-choice .wb-course-row{border-bottom:0;padding:10px 0}
 #wb-study-ui .wb-course-actions{margin-top:10px;grid-template-columns:repeat(auto-fit,minmax(100px,1fr))}
 #wb-study-ui .wb-course-choice .wb-course-actions{margin-top:2px}
+
+/* Course choice lives on the home panel; current learning stays below it. */
+#wb-study-ui .wb-home-selection{padding:0;border:0;background:transparent}
+#wb-study-ui .wb-home-selection>.wb-course-progress{padding:11px;border:1px solid var(--wb-border);border-radius:11px;background:var(--wb-soft);margin-top:12px}
+#wb-study-ui .wb-home-selection .wb-summary-heading strong{font-size:13px;font-weight:600}
+#wb-study-ui .wb-home-courses{max-height:clamp(150px,34vh,264px);overflow-y:auto;overscroll-behavior:contain;scrollbar-gutter:stable;margin-top:7px;padding:1px 2px 2px 0}
+#wb-study-ui .wb-home-course{padding:10px;border:1px solid var(--wb-border);border-radius:10px;background:var(--wb-bg);margin-bottom:7px;overflow:hidden}
+#wb-study-ui .wb-home-course-row{display:flex;align-items:center;gap:10px}
+#wb-study-ui .wb-home-course:last-child{margin-bottom:0}
+#wb-study-ui .wb-home-course[data-current="true"]{border-color:var(--wb-accent)}
+#wb-study-ui .wb-home-course-info{flex:1;min-width:0;border:0;background:transparent;padding:0;text-align:left;color:var(--wb-fg);cursor:pointer}
+#wb-study-ui .wb-home-course-info strong{display:block;font-size:13px;line-height:1.5;font-weight:600;overflow-wrap:anywhere}
+#wb-study-ui .wb-home-course-info span{display:block;font-size:11px;line-height:1.6;color:var(--wb-muted);margin-top:3px;overflow-wrap:anywhere}
+#wb-study-ui .wb-home-course .wb-course-start{flex:none;width:auto;min-height:36px;font-size:12px;padding:7px 10px;white-space:nowrap}
+#wb-study-ui .wb-home-courses:focus-visible,#wb-study-ui .wb-home-course-info:focus-visible{outline:2px solid var(--wb-accent);outline-offset:2px}
+#wb-study-ui .wb-course-drawer{margin:9px -10px -10px;background:var(--wb-soft);border-top:1px solid var(--wb-border)}
+#wb-study-ui .wb-drawer-toggle{display:flex;align-items:center;gap:8px;width:100%;padding:9px 10px;border:0;background:transparent;color:var(--wb-fg);font:inherit;font-size:11px;text-align:left;cursor:pointer}
+#wb-study-ui .wb-drawer-toggle>span:first-child{flex:1;font-weight:600}
+#wb-study-ui .wb-drawer-toggle>span:nth-child(2){color:var(--wb-muted);font-variant-numeric:tabular-nums}
+#wb-study-ui .wb-drawer-chevron{transition:transform 180ms ease}
+#wb-study-ui .wb-course-drawer[data-open="true"] .wb-drawer-chevron{transform:rotate(180deg)}
+#wb-study-ui .wb-drawer-body{display:grid;grid-template-rows:0fr;transition:grid-template-rows 180ms ease}
+#wb-study-ui .wb-course-drawer[data-open="true"] .wb-drawer-body{grid-template-rows:1fr}
+#wb-study-ui .wb-drawer-clip{min-height:0;overflow:hidden}
+#wb-study-ui .wb-drawer-content{padding:0 10px 9px}
+#wb-study-ui .wb-drawer-footer{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:11px;color:var(--wb-muted);margin-top:5px}
+@media(prefers-reduced-motion:reduce){#wb-study-ui .wb-drawer-body,#wb-study-ui .wb-drawer-chevron{transition:none}}

@@ -32,6 +32,65 @@ async function scanned() {
   f.job = await ok(f.c, f.worker, 'worker', 'course-result', { ...auth(f.job), result: { total: 1, remaining: 1 } });
   return f;
 }
+async function learning() {
+  const f = await catalog();
+  f.job = await ok(f.c, f.home, 'home', 'course-select', { ...auth(f.job), index: 0, candidateKey: '课程 A', purpose: 'learn', targetPercent: 80 });
+  f.job = await ok(f.c, f.home, 'home', 'open', { ...auth(f.job), index: 0, purpose: 'inspect' });
+  f.worker = f.c.addTab(URL, f.home);
+  f.job = await ok(f.c, f.worker, 'worker', 'hello', { title: '课程 A' });
+  return f;
+}
+
+test('one click scans selected course before playback, then authorizes only that course', async () => {
+  const f = await learning();
+  assert.equal(f.job.targetPurpose, 'inspect'); assert.equal(f.job.learnAfterScan, true);
+  f.job = await ok(f.c, f.worker, 'worker', 'directory-checkpoint', { ...auth(f.job), snapshot: snapshot() });
+  const inspected = f.job;
+  f.job = await ok(f.c, f.worker, 'worker', 'course-result', { ...auth(f.job), result: { total: 1, remaining: 1 } });
+  assert.equal(f.job.running, true); assert.equal(f.job.operation, 'play'); assert.equal(f.job.selectedIndex, 0);
+  assert.equal(f.job.targetPercent, 80); assert.equal(f.job.candidates[0].scanState, 'ready');
+  assert.equal(f.job.candidates[1].total, null);
+  assert.equal((await f.c.request(f.worker, 'worker', 'course-result', { ...auth(inspected), result: { total: 1, remaining: 1 } })).error, 'TASK_CANCELLED');
+});
+
+for (const completed of [true, false]) {
+  test('scan ending after pause cannot authorize playback; completed=' + completed, async () => {
+    const f = await learning();
+    f.job = await ok(f.c, f.worker, 'worker', 'directory-checkpoint', { ...auth(f.job), snapshot: snapshot() });
+    const scanning = f.job;
+    f.job = await ok(f.c, f.worker, 'worker', 'pause', auth(f.job));
+    assert.equal((await f.c.request(f.worker, 'worker', 'course-result', { ...auth(scanning), result: { total: 1, remaining: completed ? 0 : 1 } })).error, 'TASK_CANCELLED');
+    assert.equal(f.c.storage.session[KEY].running, false);
+  });
+}
+test('one-click scan with all platform markers completes without starting playback', async () => {
+  const f = await learning();
+  const done = snapshot([{ key: 'v', title: '视频', mediaType: 'video', durationSeconds: 60, observedCompleted: true }]);
+  f.job = await ok(f.c, f.worker, 'worker', 'directory-checkpoint', { ...auth(f.job), snapshot: done });
+  f.job = await ok(f.c, f.worker, 'worker', 'course-result', { ...auth(f.job), result: { total: 1, remaining: 0 } });
+  assert.equal(f.job.phase, 'selection'); assert.equal(f.job.running, false); assert.equal(f.job.learnAfterScan, undefined);
+  assert.equal(f.job.candidates[0].records.v.confirmed, true);
+});
+
+test('pause requested during scan-to-play handoff fences both operation generations', async () => {
+  const f = await learning();
+  f.job = await ok(f.c, f.worker, 'worker', 'directory-checkpoint', { ...auth(f.job), snapshot: snapshot() });
+  const scanning = f.job, receiver = { location: { href: URL } };
+  f.c.connect(f.worker)(receiver);
+  let pause;
+  receiver.chrome.runtime.onMessage.addListener(message => {
+    if (!pause && message.job?.running && message.job.operation === 'play') {
+      pause = f.c.request(f.worker, 'worker', 'pause', auth(scanning));
+    }
+  });
+  f.job = await ok(f.c, f.worker, 'worker', 'course-result', { ...auth(scanning), result: { total: 1, remaining: 1 } });
+  assert.ok(pause, 'pause arrives while the play generation is broadcasting');
+  assert.equal(f.job.running, false);
+  await pause;
+  assert.equal(f.c.storage.session[KEY].running, false);
+  assert.equal(f.c.storage.session[KEY].phase, 'paused');
+  assert.equal(f.c.storage.session[KEY].candidates[1].total, null);
+});
 
 test('catalog ends at selection without opening or learning; unknown totals remain null', async () => {
   const { c, home, job } = await catalog();

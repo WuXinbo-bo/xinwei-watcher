@@ -1291,7 +1291,7 @@
     const resetPending = state.resetPending || state.mode === 'resetting' || job?.phase === 'resetting';
     const legacyTask = document.getElementById('wb-current')?.textContent || '';
     const legacyStatus = document.getElementById('wb-status')?.textContent || '';
-    const home = { status: '准备就绪', title: '先获取课程列表', subtitle: '选中一门课后，再扫描目录或开始本课',
+    const home = { status: '准备就绪', title: '先扫描课程', subtitle: '课程会直接显示在这里，选择一门即可开始学习',
       caption: '', targetBadge: `${getPlaybackTarget()}% 后切换`, notice: '', tone: 'neutral',
       showStart: true, showStop: false, showResults: false, resetRetry: false, progress: null };
     if (running) {
@@ -1308,7 +1308,7 @@
         home.subtitle = '等待课程页面打开';
         if (job.openDeadline) home.caption = `等待剩余 ${Math.max(0, Math.ceil((job.openDeadline - Date.now()) / 1000))} 秒`;
       } else if (phase === 'course' && job?.targetPurpose === 'inspect') {
-        home.status = '正在统计音视频'; home.subtitle = '仅扫描所选课程，完成后等待你的操作';
+        home.status = '正在统计音视频'; home.subtitle = job.learnAfterScan ? '目录核对完成后，自动开始本课学习' : '仅扫描所选课程，完成后等待你的操作';
         const completed = courses.filter(c => Number.isInteger(c.total)).length;
         if (courses.length) home.progress = { label: '已完成统计', text: `${completed} / ${courses.length} 门`, percent: completed / courses.length * 100 };
       } else if (phase === 'course') {
@@ -1341,7 +1341,7 @@
       }
     } else if (job?.workflow === 'manual' && job.phase === 'selection') {
       home.status = '等待选择'; home.title = job.lastOperation === 'inspect' ? '本课目录已扫描' : job.lastOperation === 'play' ? '本课处理结束' : '课程列表已就绪';
-      home.subtitle = job.lastOperation === 'inspect' ? '查看扫描结果，或由你开始本课' : job.lastOperation === 'play' ? '本课结果已保存，请自行选择下一门' : '点击课程右侧的扫描按钮，按需读取目录';
+      home.subtitle = job.lastOperation === 'inspect' ? '本课目录已保存，可从课程卡片开始学习' : job.lastOperation === 'play' ? '本课结果已保存，请自行选择下一门' : '点击课程右侧的“开始学习”，自动进入并核对本课目录';
       home.showResults = true; home.targetBadge = '';
     } else if (job?.phase === 'finished') {
       const allConfirmed = courses.length > 0 && courses.every(c => c.status === 'complete' || c.status === 'completed');
@@ -1441,6 +1441,7 @@
       onReset: () => resetPlugin({ confirmed: true }),
       onCourseAction: (course, purpose) => {
         if (purpose === 'list') return start({ refreshList: true });
+        if (purpose === 'continue') return start();
         const index = state.job?.candidates.findIndex(c => (c.courseKey || c.key) === course);
         if (index >= 0) return start({ purpose, index, candidateKey: course });
       },
