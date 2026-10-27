@@ -70,8 +70,10 @@ function harness() {
       }
     }
   };
-  const boot = () => vm.runInNewContext(fs.readFileSync('background.js', 'utf8'),
-    { chrome, crypto, URL, URLSearchParams, Date, console, setTimeout, clearTimeout });
+  const globals = { chrome, crypto, URL, URLSearchParams, Date, console, setTimeout, clearTimeout };
+  globals.importScripts = (...files) => files.forEach(file =>
+    vm.runInNewContext(fs.readFileSync(file, 'utf8'), globals));
+  const boot = () => vm.runInNewContext(fs.readFileSync('background.js', 'utf8'), globals);
   boot();
   const request = (action, payload = {}, instanceId = 'page', id = 1) => new Promise(resolve => {
     listener({ channel: 'xinwei-job', action, instanceId, ...clone(payload) },

@@ -690,7 +690,7 @@
         : job?.workflow === 'manual' && stopped && isTaskPage(job) ? '继续' : job?.workflow === 'manual' && job.listScannedAt ? '更新课程列表' : '获取课程列表',
       disabled: state.resetPending || state.mode === 'resetting' || job?.phase === 'resetting' ||
         state.startPending || state.pausePending || Boolean(job?.running) ||
-        route === 'other'
+        ['other', 'learn-unsupported'].includes(route)
     };
   }
 
@@ -1085,13 +1085,12 @@
   }
 
   function getRoute() {
-    if (location.origin !== 'https://www.beeline-ai.com') return 'other';
-    const path = location.pathname || '';
-    const hash = location.hash || '';
-    if (hash.includes('/courseInfo/learn/courseWare/')) return 'learn';
-    if (path === '/stu/agent') return 'agent';
-    if (path.includes('/myBank/courseResearch')) return 'home';
-    return 'site';
+    const type = globalThis.XinweiRoutes.parse(location.href).type;
+    return type === 'site' ? 'site' : type;
+  }
+
+  function getRouteInfo() {
+    return globalThis.XinweiRoutes.parse(location.href);
   }
 
   function getRouteKey() {
@@ -2814,9 +2813,7 @@
   class DeferredResource extends RecoverableError {}
 
   function currentCourseKey() {
-    const course = (location.hash || '').match(/\/courseWare\/([^/?]+)/);
-    const classId = new URLSearchParams((location.hash || '').split('?')[1] || '').get('classId') || '';
-    return course ? `${course[1]}::${classId}` : '';
+    return globalThis.XinweiRoutes.parse(location.href).courseKey;
   }
 
   async function rememberItem(key, result) {
@@ -4686,7 +4683,13 @@
         setText('wb-status', '正在恢复');
         setCurrentTask('页面已变化，正在返回原课程和音视频');
       } else if (state.running) {
-        stopForManual('当前页面无法识别，自动任务已停止');
+        const info = getRouteInfo();
+        stopForManual(route === 'learn-unsupported'
+          ? `检测到可能的课程页，但暂不支持此页面路由（${info.reason || '未知课程路由'}）`
+          : '当前页面无法识别，自动任务已停止');
+      } else if (route === 'learn-unsupported') {
+        setText('wb-course', '课程页暂不支持');
+        setCurrentTask(getRouteInfo().reason || '请更新插件后重新加载课程页');
       } else setCurrentTask('尚未开始');
     }
     updateTaskControls();
@@ -4714,6 +4717,9 @@
   if (['agent', 'home', 'site'].includes(state.currentRoute)) {
     setText('wb-course', state.currentRoute === 'agent' ? '首页' : state.currentRoute === 'home' ? '课表' : '网站页面');
     setCurrentTask('尚未开始');
+  } else if (state.currentRoute === 'learn-unsupported') {
+    setText('wb-course', '课程页暂不支持');
+    setCurrentTask(getRouteInfo().reason || '请更新插件后重新加载课程页');
   }
   updateCurrentTask();
   setText('wb-status', '未开始');
@@ -4755,7 +4761,7 @@
     state, CFG, PROMOTION_CONFIG,
     normalizePlaybackTarget, getPlaybackTarget, savePlaybackTarget,
     parseProgressText, getResourceCompletion,
-    getMenuItems, getItemKey, isVideoItem, isPageCompletedItem, currentCourseKey,
+    getMenuItems, getItemKey, isVideoItem, isPageCompletedItem, currentCourseKey, getRoute, getRouteInfo,
     appendLog, log, renderLogEntries, logIsNearLatest,
     humanClick, getPlaybackStartButton, runCourse, playItemToEnd, getHomeCourseCards,
     getReportTiming, gatewayFailureForPause, getPlaybackBlockingDialog, trustedPlayerInput,

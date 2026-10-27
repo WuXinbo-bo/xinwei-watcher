@@ -4,6 +4,7 @@ const { coordinator } = require('./coordinator.cjs');
 const { homeFixture, homeCard, fixture, mediaItem, waitFor } = require('./helpers.cjs');
 const HOME = 'https://www.beeline-ai.com/myBank/courseResearch';
 const URL = 'https://www.beeline-ai.com/student/#/courseInfo/learn/courseWare/a/video/v?classId=class-a';
+const SHORT_URL = 'https://www.beeline-ai.com/student/#/shortCourse/learn/courseWare/a/video/v?classId=class-a';
 const KEY = 'xinwei-job-v3';
 const auth = job => ({ runId: job.runId, generation: job.generation });
 const entries = () => ['课程 A', '课程 B'].map((title, i) => ({ key: title, title, page: 1, order: i, status: 'uninspected', total: null, remaining: null }));
@@ -18,14 +19,54 @@ async function catalog() {
   job = await ok(c, home, 'home', 'scan-result', { ...auth(job), candidates: entries() });
   return { c, home, job };
 }
-async function inspect(f, announce = true) {
+async function inspect(f, announce = true, learnUrl = URL) {
   let { c, home, job } = f;
   job = await ok(c, home, 'home', 'course-select', { ...auth(job), index: 0, candidateKey: '课程 A', purpose: 'inspect' });
   job = await ok(c, home, 'home', 'open', { ...auth(job), index: 0, purpose: 'inspect' });
-  const worker = c.addTab(URL, home);
+  const worker = c.addTab(learnUrl, home);
   if (announce) job = await ok(c, worker, 'worker', 'hello', { title: '课程 A' });
   return { ...f, job, worker };
 }
+
+test('shortCourse 路由可识别、扫描并通过后台课程身份校验', async () => {
+  const page = fixture([mediaItem('短课视频')], { url: SHORT_URL });
+  try {
+    assert.equal(page.api.getRoute(), 'learn');
+    assert.equal(page.api.currentCourseKey(), 'a::class-a');
+    assert.equal(page.api.refreshDirectories({ logSummary: false }).videoItems.length, 1);
+  } finally { page.dom.window.close(); }
+
+  const f = await inspect(await catalog(), false, SHORT_URL);
+  f.job = await ok(f.c, f.worker, 'worker', 'hello', { title: '课程 A' });
+  assert.equal(f.job.phase, 'course');
+  assert.equal(f.job.candidates[0].courseKey, 'a::class-a');
+  assert.equal(f.job.candidates[0].learnUrl, SHORT_URL);
+  f.job = await ok(f.c, f.worker, 'worker', 'directory-checkpoint', { ...auth(f.job), snapshot: snapshot() });
+  f.job = await ok(f.c, f.worker, 'worker', 'course-result', { ...auth(f.job), result: { total: 1, remaining: 1 } });
+  assert.equal(f.job.phase, 'selection');
+  assert.equal(f.job.candidates[0].scanState, 'ready');
+});
+
+test('shortCourse 课程页可在暂停后由后台验证并恢复同一任务', async () => {
+  const c = coordinator();
+  const tab = c.addTab(SHORT_URL);
+  let job = await ok(c, tab, 'short-course', 'start', { title: '课程', scope: 'single' });
+  assert.equal(job.phase, 'course');
+  job = await ok(c, tab, 'short-course', 'pause', auth(job));
+  assert.equal(job.resumePhase, 'course');
+  job = await ok(c, tab, 'short-course', 'start', auth(job));
+  assert.equal(job.running, true);
+  assert.equal(job.phase, 'course');
+});
+
+test('无法解析的课程路由会给出明确诊断并暂停，不会一直等待超时', async () => {
+  const unsupported = 'https://www.beeline-ai.com/student/#/shortCourse/learn/courseWare/a/video/v';
+  const f = await inspect(await catalog(), false, unsupported);
+  f.job = await ok(f.c, f.worker, 'worker', 'hello', { title: '课程 A' });
+  assert.equal(f.job.running, false);
+  assert.equal(f.job.phase, 'manual');
+  assert.match(f.job.reason, /缺少教学班标识/);
+});
 async function scanned() {
   let f = await inspect(await catalog());
   f.job = await ok(f.c, f.worker, 'worker', 'directory-checkpoint', { ...auth(f.job), snapshot: snapshot() });

@@ -64,6 +64,7 @@ function fixture(items, options = {}) {
   // A fake website can prepare its initial player state and observers before
   // the content script runs. This does not model browser playback permission.
   if (options.beforeContent) options.beforeContent({ window, media, advanceNaturally });
+  window.eval(fs.readFileSync('route-utils.js', 'utf8'));
   const uiStyle = window.document.createElement('style');
   uiStyle.textContent = fs.readFileSync('assistant-ui.css', 'utf8');
   window.document.head.appendChild(uiStyle);
@@ -98,6 +99,7 @@ function homeFixture(cards = [], options = {}) {
   if (options.connect) options.connect(window);
   window.HTMLElement.prototype.scrollIntoView = function () {};
   window.console.log = () => {};
+  window.eval(fs.readFileSync('route-utils.js', 'utf8'));
   const uiStyle = window.document.createElement('style');
   uiStyle.textContent = fs.readFileSync('assistant-ui.css', 'utf8');
   window.document.head.appendChild(uiStyle);

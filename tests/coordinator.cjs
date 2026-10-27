@@ -77,7 +77,10 @@ function coordinator(options = {}) {
     }
   };
   const globals = { chrome, crypto, URL, URLSearchParams, Date, console, setTimeout, clearTimeout };
-  vm.runInNewContext(fs.readFileSync('background.js', 'utf8'), globals);
+  globals.importScripts = (...files) => files.forEach(file =>
+    vm.runInNewContext(fs.readFileSync(file, 'utf8'), globals));
+  const boot = () => vm.runInNewContext(fs.readFileSync('background.js', 'utf8'), globals);
+  boot();
   const addTab = (url, openerTabId) => {
     const tab = { id: nextId++, url, openerTabId };
     tabs.set(tab.id, tab);
@@ -108,7 +111,7 @@ function coordinator(options = {}) {
   return {
     addTab, request, connect, tabs, storage, navigation, removed, reloads, windowFocus, onNavigation, onTabRemoved: onRemoved, onStorageChanged,
     failStorage: () => { failStorage = true; },
-    restartWorker: () => { vm.runInNewContext(fs.readFileSync('background.js', 'utf8'), globals); },
+    restartWorker: boot,
     restartBrowser: () => { storage.session = {}; },
     closeTab: async id => chrome.tabs.remove(id)
   };

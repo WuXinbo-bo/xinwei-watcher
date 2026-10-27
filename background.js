@@ -2,6 +2,8 @@
  * Updated 2026-10-13: confirmed full reset and fresh homepage collection. */
 (() => {
   'use strict';
+  if (!globalThis.XinweiRoutes) importScripts('route-utils.js');
+  const routeParser = globalThis.XinweiRoutes;
   const CHANNEL = 'xinwei-job';
   const KEY = 'xinwei-job-v3';
   const OBS_KEY = 'xinwei-media-observation-v1';
@@ -454,18 +456,12 @@
   }
 
   function route(sender) {
-    const url = new URL(sender.url);
-    if (url.pathname === '/stu/agent') return 'agent';
-    if (url.pathname === '/myBank/courseResearch') return 'home';
-    if (url.hash.includes('/courseInfo/learn/courseWare/')) return 'learn';
-    return 'other';
+    const type = routeParser.parse(sender?.url).type;
+    return type === 'site' ? 'other' : type;
   }
 
   function courseKey(sender) {
-    const hash = new URL(sender.url).hash;
-    const id = hash.match(/\/courseWare\/([^/?]+)/)?.[1];
-    const classId = new URLSearchParams(hash.split('?')[1] || '').get('classId');
-    return id && classId ? `${id}::${classId}` : '';
+    return routeParser.parse(sender?.url).courseKey;
   }
 
   function normalizeRouteForComparison(routeKey) {
@@ -500,9 +496,9 @@
     try {
       const url = new URL(tab.url);
       if (url.origin !== 'https://www.beeline-ai.com' || url.username || url.password) return false;
-      const page = route({ url: url.href });
-      return ['agent', 'home'].includes(page) ||
-        (url.pathname.startsWith('/student/') && /^#\/courseInfo\//.test(url.hash));
+      const page = routeParser.parse(url.href);
+      return ['agent', 'home'].includes(page.type) ||
+        (url.pathname.startsWith('/student/') && ['courseInfo', 'shortCourse'].includes(page.routeFamily));
     } catch { return false; }
   }
 
@@ -1410,7 +1406,7 @@
         changed = true;
       }
       if (job.phase === 'opening' && job.workerTabId === job.homeTabId &&
-        tabId === job.homeTabId && route(sender) !== 'learn') return job;
+        tabId === job.homeTabId && !['learn', 'learn-unsupported'].includes(route(sender))) return job;
       if (tabId === job.homeTabId && route(sender) === 'home') {
         if (job.ownerTabId === tabId && job.ownerInstance && job.ownerInstance !== msg.instanceId) {
           if (!['scan-home', 'home'].includes(job.phase)) {
@@ -1426,6 +1422,11 @@
       }
       const inOpeningTab = job.phase === 'opening' &&
         (tabId === job.workerTabId || (tabId === job.homeTabId && job.workerTabId == null));
+      if (inOpeningTab && route(sender) === 'learn-unsupported') {
+        const info = routeParser.parse(sender.url);
+        return save(pause(job,
+          `已打开疑似课程页，但页面路由无法安全识别（${info.reason || '当前课程页格式暂不支持'}）。请更新插件后重新加载课程页。`, true));
+      }
       if (inOpeningTab && route(sender) === 'learn') {
         const candidate = job.candidates[job.targetIndex];
         const key = courseKey(sender);
@@ -1583,7 +1584,7 @@
         await chrome.tabs.get(job.ownerTabId); // closed task tab needs a fresh scan
         if (job.phase === 'course') {
           const worker = await chrome.tabs.get(job.ownerTabId);
-          if (!worker.url || !worker.url.includes('/courseInfo/learn/courseWare/')) {
+          if (!worker.url || route({ url: worker.url }) !== 'learn') {
             throw new Error('任务学习页已离开，请回到首页重新开始');
           }
           if (!job.singlePass) resetAttempt(job.candidates[job.targetIndex]);
